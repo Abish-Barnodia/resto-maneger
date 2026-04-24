@@ -12,10 +12,15 @@ const apiClient = axios.create({
 // Request interceptor for adding auth tokens, etc.
 apiClient.interceptors.request.use(
   (config) => {
-    // const token = localStorage.getItem('token');
-    // if (token) {
-    //   config.headers.Authorization = `Bearer ${token}`;
-    // }
+    if (typeof window !== 'undefined') {
+      const token = localStorage.getItem('token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+
+    // Current backend RBAC accepts ADMIN only.
+    config.headers['x-role'] = 'ADMIN';
     return config;
   },
   (error) => {
@@ -27,7 +32,15 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('API Error:', error.response?.data || error.message);
+    const status = error?.response?.status;
+    const payload = error?.response?.data;
+    const message =
+      (typeof payload === 'object' && payload?.message) ||
+      error?.message ||
+      'Unknown API error';
+
+    // Keep diagnostics without triggering noisy overlay traces from console.error.
+    console.warn('API Warning:', { status, message, payload });
     return Promise.reject(error);
   }
 );

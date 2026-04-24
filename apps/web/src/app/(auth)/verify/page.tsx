@@ -11,7 +11,7 @@ export default function VerifyPage() {
 
   const handleVerifySuccess = () => {
     // Set a mock session and role
-    login('admin');
+    login('admin@finbooks.com', 'password');
     // Navigate to admin dashboard after successful verification
     router.push('/admin');
   };

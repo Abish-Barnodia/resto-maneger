@@ -3,11 +3,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 
 interface AuthShellProps {
   children: React.ReactNode;
-  title: string;
+  title?: string;
   description?: string;
 }
 
-export function AuthShell({ children }: { children: React.ReactNode }) {
+export function AuthShell({ children }: AuthShellProps) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md shadow-lg border-border">

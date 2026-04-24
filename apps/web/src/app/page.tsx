@@ -1,5 +1,4 @@
 import React from 'react';
-import { UI_CONTENT } from '@/lib/content';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -16,8 +15,6 @@ import {
 import Link from 'next/link';
 
 export default function Index() {
-  const { dashboard } = UI_CONTENT;
-
   const features = [
     {
       title: 'POS & Billing',

@@ -151,6 +151,22 @@ export const mockDb = {
   },
 
   /**
+   * Simulates user registration.
+   */
+  registerUser: async (_formData: { name: string; phone: string; businessName: string }): Promise<boolean> => {
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    return true;
+  },
+
+  /**
+   * Simulates OTP verification.
+   */
+  verifyOtp: async (otp: string): Promise<boolean> => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return otp.trim().length === 6;
+  },
+
+  /**
    * Simulates a check for the current user's session and role.
    */
   getCurrentUser: async () => {
