@@ -24,6 +24,11 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
+// Health check (Public)
+app.get('/api/health', (req, res) => {
+  res.send({ message: 'API is healthy', status: 'ok', timestamp: new Date() });
+});
+
 app.use('/api', requireAdminRole);
 
 app.use('/api/items', itemsRouter);
@@ -31,11 +36,6 @@ app.use('/api/categories', categoriesRouter);
 app.use('/api/bills', billsRouter);
 app.use('/api/gst-config', gstRouter);
 app.use('/api/receipt-layout', receiptRouter);
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.send({ message: 'API is healthy', status: 'ok', timestamp: new Date() });
-});
 
 // Basic Root Route
 app.get('/api', (req, res) => {
