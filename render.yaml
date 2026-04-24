@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: resto-manager-api
+    env: node
+    plan: free
+    buildCommand: npx nx build api --prod
+    startCommand: cd dist/apps/api && node main.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3333
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+    healthCheckPath: /api/health
