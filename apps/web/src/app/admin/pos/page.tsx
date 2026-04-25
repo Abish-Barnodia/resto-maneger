@@ -99,6 +99,7 @@ export default function POSTerminal() {
               stock_type: 'limited' | 'unlimited';
               stock_quantity: number;
               is_active: boolean;
+              image_url: string | null;
             }>
           >('/items', { params: { is_active: 'true' } }),
         ]);
@@ -122,6 +123,7 @@ export default function POSTerminal() {
           gstRate: 0,
           stockType: item.stock_type,
           stockQuantity: item.stock_quantity ?? 0,
+          image: item.image_url ? (item.image_url.startsWith('http') || item.image_url.startsWith('data:') ? item.image_url : `${apiClient.defaults.baseURL?.replace('/api', '')}/${item.image_url}`) : undefined,
         }));
         
         console.log('Categories loaded:', cats);
