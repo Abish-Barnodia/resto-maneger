@@ -16,6 +16,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import apiClient from '@/services/apiClient';
+import { ReceiptData, ReceiptPrint } from '@/components/admin/receipt-print';
+import { Printer } from 'lucide-react';
 
 type CatalogItem = {
   id: number;
@@ -75,6 +77,9 @@ export default function BillingPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [createdBill, setCreatedBill] = useState<CreatedBill | null>(null);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [receiptLayout, setReceiptLayout] = useState<any>(null);
 
   const filteredItems = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -135,6 +140,14 @@ export default function BillingPage() {
         nextGstMap[row.category.toLowerCase()] = Number(row.gst_percentage);
       }
       setGstMap(nextGstMap);
+
+      // Load receipt layout
+      try {
+        const layoutResp = await apiClient.get('/receipt-layout');
+        setReceiptLayout(layoutResp.data);
+      } catch (e) {
+        console.error('Failed to load receipt layout', e);
+      }
     } catch (error: any) {
       setErrorMessage(error?.response?.data?.message ?? 'Failed to load billing data.');
     } finally {
@@ -241,7 +254,38 @@ export default function BillingPage() {
 
     try {
       await apiClient.post(`/bills/${createdBill.bill.id}/print`);
+      
+      const layout = receiptLayout || {
+        header_text: 'RestroManager Hotel',
+        footer_text: 'Thank you for visiting!',
+        logo_url: null,
+        show_gst_breakdown: true
+      };
+
+      const data: ReceiptData = {
+        bill_serial_number: createdBill.bill.bill_serial_number,
+        created_at: createdBill.bill.created_at,
+        header_text: layout.header_text,
+        footer_text: layout.footer_text,
+        logo_url: layout.logo_url,
+        show_gst_breakdown: layout.show_gst_breakdown,
+        items: createdBill.items.map((item) => ({
+          item_name: item.item_name,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          gst_rate: item.gst_rate,
+          gst_amount: item.gst_amount,
+          line_total: (Number(item.unit_price) * item.quantity).toString(), // Subtotal without GST
+        })),
+        subtotal: createdBill.bill.subtotal,
+        gst_total: createdBill.bill.gst_total,
+        grand_total: createdBill.bill.grand_total,
+      };
+
+      setReceiptData(data);
+      setIsReceiptOpen(true);
       setSuccessMessage(`Bill ${createdBill.bill.bill_serial_number} marked as printed.`);
+      
       setCreatedBill((prev) =>
         prev
           ? {
@@ -257,6 +301,16 @@ export default function BillingPage() {
       setErrorMessage(error?.response?.data?.message ?? 'Failed to print bill.');
     }
   }
+
+  // Effect to trigger print when receipt data is loaded and dialog is open
+  useEffect(() => {
+    if (isReceiptOpen && receiptData) {
+      const timer = setTimeout(() => {
+        window.print();
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [isReceiptOpen, receiptData]);
 
   return (
     <RoleGuard allowedRoles={['superadmin', 'admin']}>
@@ -429,6 +483,20 @@ export default function BillingPage() {
             </Card>
           </div>
         </div>
+
+        {isReceiptOpen && receiptData && (
+          <div className="fixed inset-0 z-[100] bg-white flex items-start justify-center overflow-auto p-4 md:p-10 no-print-background">
+            <div className="no-print absolute top-4 right-4 flex gap-2">
+              <Button onClick={() => window.print()}>Print Again</Button>
+              <Button variant="outline" onClick={() => setIsReceiptOpen(false)}>
+                Close Preview
+              </Button>
+            </div>
+            <div className="print:block">
+              <ReceiptPrint data={receiptData} />
+            </div>
+          </div>
+        )}
       </DashboardLayout>
     </RoleGuard>
   );

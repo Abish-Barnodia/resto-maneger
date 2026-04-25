@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { RoleGuard } from '@/components/auth/role-guard';
-import { cn } from '@/lib/utils';
+import { cn, formatDate } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   Search, 
@@ -66,6 +66,7 @@ export default function POSTerminal() {
   const [receiptLayout, setReceiptLayout] = useState<any>(null);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [isGeneratingBill, setIsGeneratingBill] = useState(false);
 
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -272,44 +273,59 @@ export default function POSTerminal() {
     alert(`Order ${generatedOrderId} placed successfully! This will navigate to the order module.`);
   };
 
-  const handlePrint = () => {
-    const layout = receiptLayout || {
-      header_text: 'RestoManager Hotel',
-      footer_text: 'Thank you for visiting!',
-      logo_url: null,
-      show_gst_breakdown: true
-    };
+  const generateBillAndPrint = async () => {
+    if (cart.length === 0) return;
+    
+    setIsGeneratingBill(true);
+    try {
+      // 1. Generate real bill on server
+      const response = await apiClient.post('/bills', {
+        cashier_id: 1, // Fallback or use auth user id if available
+        items: cart.map(item => ({
+          item_id: Number(item.id),
+          quantity: item.quantity
+        }))
+      });
+      
+      const billData = response.data;
+      const layout = receiptLayout || {
+        header_text: 'RestroManager Hotel',
+        footer_text: 'Thank you for visiting!',
+        logo_url: null,
+        show_gst_breakdown: true
+      };
 
-    const data: ReceiptData = {
-      bill_serial_number: Number(orderId.split('-')[1]) || 1024,
-      created_at: new Date().toISOString(),
-      header_text: layout.header_text,
-      footer_text: layout.footer_text,
-      logo_url: layout.logo_url,
-      show_gst_breakdown: layout.show_gst_breakdown,
-      items: cart.map(item => {
-        const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
-        const itemSubtotal = item.price * item.quantity;
-        const itemDiscount = (discountType === 'Percentage (%)') ? (itemSubtotal * discountValue) / 100 : (discountValue * itemSubtotal / totals.subtotal);
-        const itemSubtotalAfterDiscount = itemSubtotal - itemDiscount;
-        const itemGst = (itemSubtotalAfterDiscount * itemGstRate) / 100;
-        
-        return {
-          item_name: item.name,
+      // 2. Prepare receipt data from server response
+      const data: ReceiptData = {
+        bill_serial_number: billData.bill.bill_serial_number,
+        created_at: billData.bill.created_at,
+        header_text: layout.header_text,
+        footer_text: layout.footer_text,
+        logo_url: layout.logo_url,
+        show_gst_breakdown: layout.show_gst_breakdown,
+        items: billData.items.map((item: any) => ({
+          item_name: item.item_name,
           quantity: item.quantity,
-          unit_price: item.price.toString(),
-          gst_rate: itemGstRate.toString(),
-          gst_amount: itemGst.toString(),
-          line_total: (itemSubtotalAfterDiscount + itemGst).toString()
-        };
-      }),
-      subtotal: totals.subtotal.toFixed(2),
-      gst_total: totals.totalGst.toFixed(2),
-      grand_total: totals.total.toFixed(2)
-    };
+          unit_price: item.unit_price,
+          gst_rate: item.gst_rate,
+          gst_amount: item.gst_amount,
+          line_total: item.unit_price * item.quantity // Subtotal without GST as per PRD 1.2
+        })),
+        subtotal: billData.bill.subtotal,
+        gst_total: billData.bill.gst_total,
+        grand_total: billData.bill.grand_total
+      };
 
-    setReceiptData(data);
-    setIsReceiptOpen(true);
+      setReceiptData(data);
+      setOrderId(`BILL-${billData.bill.bill_serial_number}`);
+      setIsReceiptOpen(true);
+      setActiveWorkflow('receipt');
+    } catch (error: any) {
+      console.error('Failed to generate bill:', error);
+      alert(error?.response?.data?.message ?? 'Failed to generate bill. Please check your connection.');
+    } finally {
+      setIsGeneratingBill(false);
+    }
   };
 
   // Effect to trigger print when receipt data is loaded and dialog is open
@@ -593,7 +609,7 @@ export default function POSTerminal() {
                 <p className="text-xs text-gray-600">GSTIN: {gstin}</p>
                 <div className="border-t border-b border-dashed my-4 py-2">
                   <p className="text-xs font-semibold">Bill #: {orderId || '1024'}</p>
-                  <p className="text-xs">{new Date().toLocaleDateString()} | {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  <p className="text-xs">{formatDate(new Date())}</p>
                   <p className="text-xs">{selectedTable} | {orderType}</p>
                 </div>
               </div>
@@ -639,7 +655,7 @@ export default function POSTerminal() {
             </div>
 
             <div className="flex gap-3 mt-6">
-              <Button className="gap-2" onClick={handlePrint}>
+              <Button className="gap-2" onClick={() => window.print()}>
                 <Printer size={16} /> Print
               </Button>
               <Button variant="outline" className="gap-2" onClick={() => handleShare('whatsapp')}>
@@ -822,11 +838,11 @@ export default function POSTerminal() {
               Place Order
             </Button>
             <Button 
-              onClick={() => setActiveWorkflow('receipt')}
-              disabled={cart.length === 0}
+              onClick={generateBillAndPrint}
+              disabled={cart.length === 0 || isGeneratingBill}
               className="w-full h-12 bg-green-500 hover:bg-green-600 text-white font-semibold"
             >
-              Bill
+              {isGeneratingBill ? 'Generating...' : 'Bill'}
             </Button>
           </div>
         </div>

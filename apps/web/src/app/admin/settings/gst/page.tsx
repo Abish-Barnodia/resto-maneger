@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/table';
 import { Plus, Pencil, Power, PowerOff, AlertTriangle } from 'lucide-react';
 import apiClient from '@/services/apiClient';
+import { formatDate } from '@/lib/utils';
 
 type GstSlab = {
   id: number;
@@ -273,7 +274,7 @@ export default function AdminGstPage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {new Date(slab.updated_at).toLocaleString()}
+                          {formatDate(slab.updated_at)}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center justify-end gap-2">

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { RoleGuard } from '@/components/auth/role-guard';
-import { cn } from '@/lib/utils';
+import { cn, formatDate } from '@/lib/utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
   Users, 
@@ -39,16 +39,7 @@ export default function AdminDashboard() {
 
     // Update time
     const updateTime = () => {
-      const now = new Date();
-      setCurrentTime(now.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit',
-        hour12: true 
-      }) + ' | ' + now.toLocaleDateString('en-US', {
-        weekday: 'short',
-        day: '2-digit',
-        month: 'short'
-      }));
+      setCurrentTime(formatDate(new Date()));
     };
 
     updateTime();
