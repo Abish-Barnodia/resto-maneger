@@ -23,7 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Plus, Pencil, Power, PowerOff, Upload, X, ImageIcon } from 'lucide-react';
+import { Plus, Pencil, Power, PowerOff, Upload, X, ImageIcon, Trash2 } from 'lucide-react';
 import apiClient from '@/services/apiClient';
 
 type StockType = 'limited' | 'unlimited';
@@ -139,6 +139,9 @@ export default function AdminCatalogPage() {
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDeactivateItem, setPendingDeactivateItem] = useState<Item | null>(null);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [pendingDeleteItem, setPendingDeleteItem] = useState<Item | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const categoryNames = useMemo(
     () => categories.map((c) => c.name).sort((a, b) => a.localeCompare(b)),
@@ -317,9 +320,30 @@ export default function AdminCatalogPage() {
   async function handleActivate(item: Item) {
     try {
       await apiClient.put(`/items/${item.id}`, { is_active: true });
-      await loadItems();
+      loadItems();
     } catch (error: any) {
       setErrorMessage(error?.response?.data?.message ?? 'Failed to activate item.');
+    }
+  }
+
+  function requestDelete(item: Item) {
+    setPendingDeleteItem(item);
+    setIsDeleteOpen(true);
+  }
+
+  async function handleDeleteConfirmed() {
+    if (!pendingDeleteItem) return;
+    setIsDeleting(true);
+    setErrorMessage(null);
+    try {
+      await apiClient.delete(`/items/${pendingDeleteItem.id}`);
+      setPendingDeleteItem(null);
+      loadItems();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message ?? 'Failed to delete item. It might be used in existing bills.');
+    } finally {
+      setIsDeleting(false);
+      setIsDeleteOpen(false); // Close dialog in all cases
     }
   }
 
@@ -353,7 +377,7 @@ export default function AdminCatalogPage() {
     }
 
     try {
-      await apiClient.delete(`/items/${pendingDeactivateItem.id}`);
+      await apiClient.put(`/items/${pendingDeactivateItem.id}`, { is_active: false });
       setConfirmOpen(false);
       setPendingDeactivateItem(null);
       await loadItems();
@@ -380,6 +404,15 @@ export default function AdminCatalogPage() {
               Add Category
             </Button>
           </div>
+
+          {errorMessage && (
+            <div className="bg-destructive/10 border border-destructive/20 text-destructive px-4 py-3 rounded-xl flex items-center justify-between">
+              <p className="text-sm font-medium">{errorMessage}</p>
+              <button onClick={() => setErrorMessage(null)}>
+                <X size={16} />
+              </button>
+            </div>
+          )}
 
           <Card className="border bg-white shadow-sm">
             <CardContent className="pt-6">
@@ -441,11 +474,6 @@ export default function AdminCatalogPage() {
               <CardTitle className="text-lg">Items</CardTitle>
             </CardHeader>
             <CardContent>
-              {errorMessage && (
-                <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                  {errorMessage}
-                </div>
-              )}
 
               <Table>
                 <TableHeader>
@@ -537,6 +565,17 @@ export default function AdminCatalogPage() {
                                 Activate
                               </Button>
                             )}
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-1 text-destructive hover:bg-destructive/10 border-destructive/20"
+                              onClick={() => requestDelete(item)}
+                            >
+                              <Trash2 size={14} />
+                              Delete
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -739,6 +778,32 @@ export default function AdminCatalogPage() {
               </Button>
               <Button type="button" variant="destructive" onClick={handleDeactivateConfirmed}>
                 Confirm Deactivate
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle className="text-destructive">Delete Item Permanently</DialogTitle>
+              <DialogDescription>
+                {pendingDeleteItem
+                  ? `Are you sure you want to delete "${pendingDeleteItem.name}"? This action cannot be undone.`
+                  : 'Are you sure you want to delete this item? This action cannot be undone.'}
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setIsDeleteOpen(false)}>
+                Cancel
+              </Button>
+              <Button 
+                type="button" 
+                variant="destructive" 
+                onClick={handleDeleteConfirmed}
+                disabled={isDeleting}
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm Delete'}
               </Button>
             </DialogFooter>
           </DialogContent>

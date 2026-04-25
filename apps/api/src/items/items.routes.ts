@@ -306,20 +306,28 @@ itemsRouter.delete('/:id', async (req, res) => {
     return;
   }
 
-  const result = await pool.query<ItemRow>(
-    `
-    UPDATE items
-    SET is_active = false, updated_at = NOW()
-    WHERE id = $1
-    RETURNING *;
-    `,
-    [itemId]
-  );
+  try {
+    const result = await pool.query<ItemRow>(
+      'DELETE FROM items WHERE id = $1 RETURNING *;',
+      [itemId]
+    );
 
-  if (result.rowCount === 0) {
-    res.status(404).json({ message: 'Item not found.' });
-    return;
+    if (result.rowCount === 0) {
+      res.status(404).json({ message: 'Item not found.' });
+      return;
+    }
+
+    res.json({ message: 'Item deleted permanently.', item: result.rows[0] });
+  } catch (error: any) {
+    // Check for foreign key constraint violation (PostgreSQL error code 23503)
+    if (error.code === '23503') {
+      res.status(400).json({ 
+        message: 'Cannot delete this item because it is referenced in existing bills. Please deactivate it instead.' 
+      });
+      return;
+    }
+    
+    const message = error instanceof Error ? error.message : 'Failed to delete item.';
+    res.status(500).json({ message });
   }
-
-  res.json({ message: 'Item soft-deleted successfully.', item: result.rows[0] });
 });
