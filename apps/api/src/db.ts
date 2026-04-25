@@ -1,7 +1,12 @@
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
 import dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
+
+types.setTypeParser(1114, (value: string) => {
+  const normalizedValue = value.trim().replace(' ', 'T');
+  return new Date(`${normalizedValue}+05:30`);
+});
 
 const envCandidates = [
   path.resolve(process.cwd(), 'apps/api/.env'),
@@ -29,6 +34,7 @@ if (!connectionString) {
 
 export const pool = new Pool({
   connectionString,
+  options: '-c timezone=Asia/Kolkata',
 });
 
 export async function initializeDatabase(): Promise<void> {

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import { formatDate } from '@/lib/utils';
 
 export type ReceiptData = {
   bill_serial_number: number;
@@ -74,9 +74,15 @@ export function ReceiptPrint({ data }: { data: ReceiptData }) {
         {data.header_text}
       </div>
 
-      <div className="flex justify-between font-bold mb-4 border-b border-dashed border-black pb-2 text-[14px]">
-        <span>BILL NO: #{data.bill_serial_number}</span>
-        <span>{new Date(data.created_at).toLocaleDateString()}</span>
+      <div className="flex flex-col gap-1 font-bold mb-4 border-b border-dashed border-black pb-2 text-[14px]">
+        <div className="flex justify-between">
+          <span>BILL NO:</span>
+          <span>#{data.bill_serial_number}</span>
+        </div>
+        <div className="flex justify-between">
+          <span>DATE & TIME:</span>
+          <span>{formatDate(data.created_at)}</span>
+        </div>
       </div>
 
       <table className="w-full mb-4">

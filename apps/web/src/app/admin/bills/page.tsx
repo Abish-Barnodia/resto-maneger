@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/table';
 import apiClient from '@/services/apiClient';
 import { ReceiptData, ReceiptPrint } from '@/components/admin/receipt-print';
+import { formatDate } from '@/lib/utils';
 
 type BillStatus = 'draft' | 'completed' | 'printed';
 
@@ -218,7 +219,7 @@ export default function BillsHistoryPage() {
                     bills.map((bill) => (
                       <TableRow key={bill.id}>
                         <TableCell className="font-medium">{bill.bill_serial_number}</TableCell>
-                        <TableCell>{new Date(bill.created_at).toLocaleString()}</TableCell>
+                        <TableCell>{formatDate(bill.created_at)}</TableCell>
                         <TableCell className="text-right">{bill.items_count}</TableCell>
                         <TableCell className="text-right">Rs {Number(bill.subtotal).toFixed(2)}</TableCell>
                         <TableCell className="text-right">Rs {Number(bill.gst_total).toFixed(2)}</TableCell>
@@ -274,7 +275,7 @@ export default function BillsHistoryPage() {
                     </div>
                     <div>
                       <p className="text-muted-foreground">Date</p>
-                      <p className="font-medium">{new Date(selectedBill.bill.created_at).toLocaleString()}</p>
+                      <p className="font-medium">{formatDate(selectedBill.bill.created_at)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Status</p>

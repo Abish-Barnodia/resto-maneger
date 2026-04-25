@@ -27,7 +27,11 @@ app.use('/assets', express.static(path.join(__dirname, 'assets')));
 // Health check (Public)
 app.get('/api/health', (req, res) => {
   console.log('Health check ping received');
-  res.send({ message: 'API is healthy', status: 'ok', timestamp: new Date() });
+  res.send({
+    message: 'API is healthy',
+    status: 'ok',
+    timestamp: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false })
+  });
 });
 
 app.use('/api', requireAdminRole);
