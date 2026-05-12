@@ -18,11 +18,10 @@ dotenv.config();
 const app = express();
 
 app.use(cors({
-  origin: [
-    'http://localhost:4200',
-    'https://localhost:4200',
-    process.env.FRONTEND_URL || 'http://localhost:4200'
-  ],
+  origin: function (origin, callback) {
+    // Allow any origin to bypass CORS issues with dynamic Vercel URLs
+    callback(null, true);
+  },
   credentials: true
 }));
 app.use(express.json({ limit: '10mb' }));
