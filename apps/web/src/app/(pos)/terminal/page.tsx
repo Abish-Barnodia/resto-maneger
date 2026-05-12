@@ -11,15 +11,16 @@ import { Input } from '@/components/ui/input';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import apiClient from '@/services/apiClient';
 
 export default function PosTerminalPage() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
-  
+
   const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  
+
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
@@ -91,9 +92,9 @@ export default function PosTerminalPage() {
   const handlePlaceOrder = async () => {
     if (cart.length === 0) return;
     setIsPlacingOrder(true);
-    
+
     const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    
+
     // Calculate tax dynamically based on item's gstRate or category default
     const tax = cart.reduce((sum, item) => {
       const category = categories.find(c => c.id === item.categoryId);
@@ -112,15 +113,23 @@ export default function PosTerminalPage() {
         total
       };
 
-      const result = await mockDb.createOrder(orderData);
-      
-      if (result.success) {
-        setLastOrderDetails({ orderId: result.orderId, ...orderData });
+      // Create an order via API
+      const result = await apiClient.post(`/tables/${selectedTable}/orders`, { items: cart });
+
+      if (result.status === 201 || result.status === 200) {
+        setLastOrderDetails({ orderId: result.data.order_id, ...orderData });
+        
+        // Also send it to kitchen
+        await apiClient.post(`/orders/${result.data.order_id}/send-to-kitchen`);
+        
         setIsReceiptDialogOpen(true);
         // Reset POS state
         setCart([]);
         setSelectedTable(null);
       }
+    } catch (error: any) {
+      console.error('Failed to create order:', error);
+      alert(error?.response?.data?.message || 'Failed to place order.');
     } finally {
       setIsPlacingOrder(false);
     }
@@ -137,13 +146,13 @@ export default function PosTerminalPage() {
   return (
     <>
       <div className="flex flex-col lg:flex-row h-full gap-6 max-h-[calc(100vh-theme(spacing.24))]">
-        
+
         {/* Left Area - Menu & Categories */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           {/* Search */}
           <div className="relative mb-6">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input 
+            <Input
               className="pl-12 h-14 bg-card border-none shadow-sm rounded-xl text-lg focus-visible:ring-primary"
               placeholder={UI_CONTENT.pos.terminal.searchPlaceholder}
               value={searchQuery}
@@ -152,10 +161,10 @@ export default function PosTerminalPage() {
           </div>
 
           {/* Categories Horizontal Scroll */}
-          <CategoryList 
-            categories={categories} 
-            activeCategoryId={activeCategoryId} 
-            onSelectCategory={setActiveCategoryId} 
+          <CategoryList
+            categories={categories}
+            activeCategoryId={activeCategoryId}
+            onSelectCategory={setActiveCategoryId}
           />
 
           {/* Menu Grid */}
@@ -167,7 +176,7 @@ export default function PosTerminalPage() {
         {/* Right Area - Cart */}
         <div className="w-full lg:w-[400px] shrink-0 h-full fixed lg:relative bottom-0 left-0 right-0 lg:bottom-auto z-20 transition-transform bg-background/95 backdrop-blur lg:bg-transparent p-4 lg:p-0 border-t lg:border-none shadow-2xl lg:shadow-none animate-in slide-in-from-bottom-full lg:slide-in-from-right">
           <div className="h-[50vh] lg:h-full pb-4 lg:pb-0">
-            <CartSummary 
+            <CartSummary
               items={cart}
               onUpdateQuantity={handleUpdateQuantity}
               onRemoveItem={handleRemoveItem}

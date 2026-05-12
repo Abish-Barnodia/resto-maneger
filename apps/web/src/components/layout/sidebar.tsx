@@ -5,17 +5,17 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { cn } from '@/lib/utils';
-import { 
-  LayoutDashboard, 
-  Receipt, 
-  UtensilsCrossed, 
-  Table as TableIcon, 
-  CalendarDays, 
-  Store, 
-  Package, 
-  CreditCard, 
-  FileText, 
-  Users, 
+import {
+  LayoutDashboard,
+  Receipt,
+  UtensilsCrossed,
+  Table as TableIcon,
+  CalendarDays,
+  Store,
+  Package,
+  CreditCard,
+  FileText,
+  Users,
   LogOut,
   ChevronRight,
   Settings
@@ -72,13 +72,13 @@ export function Sidebar() {
         {MENU_ITEMS.map((item) => {
           const isActive = pathname === item.href;
           return (
-            <Link 
+            <Link
               key={item.href}
               href={item.href}
               className={cn(
                 "flex items-center gap-3 px-4 py-3 rounded-xl transition-all group relative",
-                isActive 
-                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/20" 
+                isActive
+                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
               )}
             >
@@ -102,7 +102,7 @@ export function Sidebar() {
 
       {/* Logout */}
       <div className="p-4 border-t">
-        <button 
+        <button
           onClick={() => logout()}
           className="w-full flex items-center gap-3 px-4 py-3 text-muted-foreground hover:text-destructive hover:bg-destructive/5 rounded-xl transition-all group"
         >

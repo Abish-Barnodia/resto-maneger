@@ -225,4 +225,137 @@ export async function initializeDatabase(): Promise<void> {
   `);
 
   await pool.query('CREATE INDEX IF NOT EXISTS idx_bill_items_bill_id ON bill_items(bill_id);');
+
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'table_status_enum') THEN
+        CREATE TYPE table_status_enum AS ENUM ('free', 'occupied', 'billed');
+      END IF;
+    END
+    $$;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tables (
+      table_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      table_number VARCHAR NOT NULL UNIQUE,
+      status table_status_enum NOT NULL DEFAULT 'free',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status_enum') THEN
+        CREATE TYPE order_status_enum AS ENUM ('open', 'sent_to_kitchen', 'billed');
+      END IF;
+    END
+    $$;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orders (
+      order_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      table_id UUID NOT NULL REFERENCES tables(table_id) ON DELETE RESTRICT,
+      order_phase INTEGER NOT NULL,
+      status order_status_enum NOT NULL DEFAULT 'open',
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE(table_id, order_phase)
+    );
+  `);
+
+  await pool.query(`
+    CREATE SEQUENCE IF NOT EXISTS order_serial_number_seq START 1;
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS order_items (
+      order_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      order_id UUID REFERENCES orders(order_id) ON DELETE CASCADE,
+      item_id INTEGER REFERENCES items(id),
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      price_at_billing DECIMAL(10,2) NOT NULL,
+      gst_percent_at_billing DECIMAL(5,2) NOT NULL DEFAULT 0,
+      serial_number SERIAL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  await pool.query(`
+    DO $$ 
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'kot_status') THEN
+        CREATE TYPE kot_status AS ENUM ('pending', 'acknowledged', 'completed');
+      END IF;
+    END $$;
+
+    CREATE TABLE IF NOT EXISTS kots (
+      kot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      order_id UUID REFERENCES orders(order_id) ON DELETE CASCADE,
+      table_id UUID REFERENCES tables(table_id) ON DELETE CASCADE,
+      table_number VARCHAR(50) NOT NULL,
+      order_phase INTEGER NOT NULL,
+      kot_number VARCHAR(50) NOT NULL UNIQUE,
+      status kot_status DEFAULT 'pending',
+      generated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS kot_items (
+      kot_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      kot_id UUID REFERENCES kots(kot_id) ON DELETE CASCADE,
+      item_id INTEGER REFERENCES items(id),
+      item_name VARCHAR(255) NOT NULL,
+      quantity INTEGER NOT NULL CHECK (quantity > 0),
+      serial_number INTEGER
+    );
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sections (
+      section_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      section_name VARCHAR(255) UNIQUE NOT NULL,
+      description TEXT,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS item_section_mapping (
+      mapping_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+      section_id UUID REFERENCES sections(section_id) ON DELETE CASCADE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(item_id, section_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS section_kots (
+      section_kot_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      parent_kot_id UUID REFERENCES kots(kot_id) ON DELETE CASCADE,
+      section_id UUID REFERENCES sections(section_id) ON DELETE SET NULL,
+      section_name VARCHAR(255),
+      section_kot_number VARCHAR(100) UNIQUE NOT NULL,
+      status kot_status DEFAULT 'pending',
+      generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS section_kot_items (
+      section_kot_item_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      section_kot_id UUID REFERENCES section_kots(section_kot_id) ON DELETE CASCADE,
+      item_id INTEGER REFERENCES items(id),
+      item_name VARCHAR(255) NOT NULL,
+      quantity INTEGER NOT NULL,
+      serial_number INTEGER
+    );
+  `);
+
+  await pool.query(`
+    DROP TRIGGER IF EXISTS set_tables_updated_at ON tables;
+    CREATE TRIGGER set_tables_updated_at
+    BEFORE UPDATE ON tables
+    FOR EACH ROW
+    EXECUTE FUNCTION set_updated_at_timestamp();
+  `);
 }

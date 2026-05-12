@@ -254,7 +254,7 @@ export default function BillingPage() {
 
     try {
       await apiClient.post(`/bills/${createdBill.bill.id}/print`);
-      
+
       const layout = receiptLayout || {
         header_text: 'RestroManager Hotel',
         footer_text: 'Thank you for visiting!',
@@ -285,16 +285,16 @@ export default function BillingPage() {
       setReceiptData(data);
       setIsReceiptOpen(true);
       setSuccessMessage(`Bill ${createdBill.bill.bill_serial_number} marked as printed.`);
-      
+
       setCreatedBill((prev) =>
         prev
           ? {
-              ...prev,
-              bill: {
-                ...prev.bill,
-                status: 'printed',
-              },
-            }
+            ...prev,
+            bill: {
+              ...prev.bill,
+              status: 'printed',
+            },
+          }
           : prev
       );
     } catch (error: any) {

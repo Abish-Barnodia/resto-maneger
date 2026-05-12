@@ -9,6 +9,9 @@ import { categoriesRouter } from './categories/categories.routes';
 import { billsRouter } from './bills/bills.routes';
 import { gstRouter } from './gst/gst.routes';
 import { receiptRouter } from './receipt/receipt.routes';
+import { tablesRouter } from './tables/tables.routes';
+import { ordersRouter } from './orders/orders.routes';
+import { kotsRouter } from './kots/kots.routes';
 
 dotenv.config();
 
@@ -41,6 +44,9 @@ app.use('/api/categories', categoriesRouter);
 app.use('/api/bills', billsRouter);
 app.use('/api/gst-config', gstRouter);
 app.use('/api/receipt-layout', receiptRouter);
+app.use('/api/tables', tablesRouter);
+app.use('/api/orders', ordersRouter);
+app.use('/api/kots', kotsRouter);
 
 // Basic Root Route
 app.get('/api', (req, res) => {
