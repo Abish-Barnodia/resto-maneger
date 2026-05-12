@@ -102,6 +102,17 @@ export default function POSTerminal() {
           apiClient.get<Array<{ table_id: string; table_number: string; status: string }>>('/tables'),
         ]);
 
+        // Auto-seed tables 1-10 if DB has none
+        if ((tablesResp.data ?? []).length === 0) {
+          await Promise.allSettled(
+            Array.from({ length: 10 }, (_, i) =>
+              apiClient.post('/tables', { table_number: String(i + 1) })
+            )
+          );
+          const reloaded = await apiClient.get<Array<{ table_id: string; table_number: string; status: string }>>('/tables');
+          tablesResp.data = reloaded.data;
+        }
+
         const cats: MenuCategory[] = (catsResp.data ?? []).map((c) => ({
           id: String(c.id), name: c.name, defaultGst: 0,
         }));

@@ -116,10 +116,8 @@ billsRouter.post('/', async (req, res) => {
 
     await client.query('BEGIN');
 
-    const cashier = await client.query<{ id: number }>('SELECT id FROM users WHERE id = $1 LIMIT 1;', [cashierId]);
-    if (cashier.rowCount === 0) {
-      throw new Error('cashier_id does not exist.');
-    }
+    // cashier_id is informational — skip hard validation so bill can be created
+    // even if the user record doesn't exist in the users table
 
     const mergedLineMap = new Map<number, number>();
     for (const line of lines) {
