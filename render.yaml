@@ -17,3 +17,17 @@ services:
       - key: FRONTEND_URL
         sync: false
     healthCheckPath: /api/health
+
+  - type: web
+    name: resto-manager-web
+    env: node
+    plan: free
+    buildCommand: npx nx build web --prod
+    startCommand: node apps/web/.next/standalone/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4200
+      - key: NEXT_PUBLIC_API_URL
+        value: https://resto-maneger.onrender.com/api
