@@ -19,11 +19,9 @@ const app = express();
 
 app.use(cors({
   origin: [
-    'http://localhost:4200',
-    'https://localhost:4200',
-    process.env.FRONTEND_URL || 'http://localhost:4200'
+    "https://resto-maneger-smd1.vercel.app"
   ],
-  credentials: true
+  credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
 app.use('/assets', express.static(path.join(__dirname, 'assets')));
