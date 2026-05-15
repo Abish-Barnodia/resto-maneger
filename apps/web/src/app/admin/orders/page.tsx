@@ -487,15 +487,8 @@ export default function OrdersPage() {
                   paddingTop: '6px',
                 }}>
                   Software by RestroManager
-                </div>
               </div>
             )}
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={() => setBillOpen(false)}>Close</Button>
-              <Button className="bg-primary text-white hover:bg-primary/90 gap-2" onClick={() => window.print()}>
-                <Printer className="w-4 h-4" /> Print Bill
-              </Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
 
