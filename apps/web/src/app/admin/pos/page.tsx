@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { RoleGuard } from '@/components/auth/role-guard';
 import { cn, formatDate } from '@/lib/utils';
@@ -14,10 +14,26 @@ import {
   Printer, 
   Share2, 
   CheckCircle2,
-  Percent
+  Percent,
+  Pencil,
+  Power,
+  PowerOff,
+  Upload,
+  X,
+  ImageIcon,
+  UtensilsCrossed
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import apiClient from '@/services/apiClient';
 import { ReceiptData, ReceiptPrint } from '@/components/admin/receipt-print';
 
@@ -43,6 +59,72 @@ type MenuItem = {
 
 type CartItem = MenuItem & { quantity: number };
 
+type StockType = 'limited' | 'unlimited';
+type ItemForm = {
+  name: string;
+  selling_price: string;
+  category: string;
+  stock_quantity: string;
+  stock_type: StockType;
+  is_active: boolean;
+  image_url: string | null;
+};
+
+const EMPTY_FORM: ItemForm = {
+  name: '',
+  selling_price: '',
+  category: '',
+  stock_quantity: '0',
+  stock_type: 'limited',
+  is_active: true,
+  image_url: null,
+};
+
+const MAX_IMAGE_SIZE_KB = 500;
+const MAX_IMAGE_DIMENSION = 800;
+
+function compressImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+
+        if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION) {
+          if (width > height) {
+            height = Math.round((height / width) * MAX_IMAGE_DIMENSION);
+            width = MAX_IMAGE_DIMENSION;
+          } else {
+            width = Math.round((width / height) * MAX_IMAGE_DIMENSION);
+            height = MAX_IMAGE_DIMENSION;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let quality = 0.8;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+
+        while (dataUrl.length > MAX_IMAGE_SIZE_KB * 1024 && quality > 0.1) {
+          quality -= 0.1;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function POSTerminal() {
   const [categories, setCategories] = useState<MenuCategory[]>([]);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -63,15 +145,37 @@ export default function POSTerminal() {
   const [selectedTable, setSelectedTable] = useState('');
   const [selectedTableLabel, setSelectedTableLabel] = useState('Select Table');
   const [dbTables, setDbTables] = useState<{ table_id: string; table_number: string; status: string }[]>([]);
+  const [existingOrders, setExistingOrders] = useState<any[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [selectedWaiter, setSelectedWaiter] = useState('John Paul');
   const [guests, setGuests] = useState(4);
   const [activeWorkflow, setActiveWorkflow] = useState('categories');
+  const [isAddTableDialogOpen, setIsAddTableDialogOpen] = useState(false);
+  const [newTableNumber, setNewTableNumber] = useState('');
+  const [newTableCapacity, setNewTableCapacity] = useState('4');
+  const [isAddingTable, setIsAddingTable] = useState(false);
   const [receiptLayout, setReceiptLayout] = useState<any>(null);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [isGeneratingBill, setIsGeneratingBill] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [showWipDialog, setShowWipDialog] = useState(false);
+
+  // Catalog CRUD states
+  const [isSaving, setIsSaving] = useState(false);
+  const [isCategorySaving, setIsCategorySaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [isCategoryDialogOpen, setIsCategoryDialogOpen] = useState(false);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const [form, setForm] = useState<ItemForm>(EMPTY_FORM);
+  const [formErrors, setFormErrors] = useState<Partial<Record<keyof ItemForm, string>>>({});
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -90,82 +194,251 @@ export default function POSTerminal() {
     setActiveWorkflow('categories');
   };
 
-  useEffect(() => {
-    const loadData = async () => {
-      try {
-        const [catsResp, itemsResp, tablesResp] = await Promise.all([
-          apiClient.get<Array<{ id: number; name: string }>>('/categories'),
-          apiClient.get<Array<{
-            id: number; category: string; name: string; selling_price: string;
-            stock_type: 'limited' | 'unlimited'; stock_quantity: number; is_active: boolean; image_url: string | null;
-          }>>('/items', { params: { is_active: 'true' } }),
-          apiClient.get<Array<{ table_id: string; table_number: string; status: string }>>('/tables'),
-        ]);
+  const loadData = async () => {
+    try {
+      const [catsResp, itemsResp, tablesResp] = await Promise.all([
+        apiClient.get<Array<{ id: number; name: string }>>('/categories'),
+        apiClient.get<Array<{
+          id: number; category: string; name: string; selling_price: string;
+          stock_type: 'limited' | 'unlimited'; stock_quantity: number; is_active: boolean; image_url: string | null;
+        }>>('/items'),
+        apiClient.get<Array<{ table_id: string; table_number: string; status: string }>>('/tables'),
+      ]);
 
-        // Auto-seed tables 1-10 if DB has none
-        if ((tablesResp.data ?? []).length === 0) {
-          await Promise.allSettled(
-            Array.from({ length: 10 }, (_, i) =>
-              apiClient.post('/tables', { table_number: String(i + 1) })
-            )
-          );
-          const reloaded = await apiClient.get<Array<{ table_id: string; table_number: string; status: string }>>('/tables');
-          tablesResp.data = reloaded.data;
-        }
-
-        const cats: MenuCategory[] = (catsResp.data ?? []).map((c) => ({
-          id: String(c.id), name: c.name, defaultGst: 0,
-        }));
-        const categoryIdByName = new Map(cats.map((c) => [c.name.toLowerCase(), c.id]));
-
-        const allItems: MenuItem[] = (itemsResp.data ?? []).map((item) => ({
-          id: String(item.id),
-          categoryId: categoryIdByName.get(item.category.toLowerCase()) ?? 'unknown',
-          name: item.name, price: Number(item.selling_price), description: '',
-          isVegetarian: true, isAvailable: item.is_active, gstRate: 0,
-          stockType: item.stock_type, stockQuantity: item.stock_quantity ?? 0,
-          image: item.image_url ? (item.image_url.startsWith('http') || item.image_url.startsWith('data:')
-            ? item.image_url : `${apiClient.defaults.baseURL?.replace('/api', '')}/${item.image_url}`) : undefined,
-        }));
-
-        const tables = tablesResp.data ?? [];
-        setDbTables(tables);
-        // Auto-select first free table
-        const firstFree = tables.find(t => t.status === 'free');
-        if (firstFree) {
-          setSelectedTable(firstFree.table_id);
-          setSelectedTableLabel(`Table ${firstFree.table_number}`);
-        }
-
-        setCategories(cats);
-        setItems(allItems);
-        setFilteredItems(allItems);
-
-        try {
-          const gstConfigResp = await apiClient.get<Array<{ category: string; gst_percentage: string; is_active: boolean }>>('/gst-config');
-          const nextGstMap: { [key: string]: number } = {};
-          (gstConfigResp.data ?? []).forEach(row => {
-            if (row.is_active) {
-              const catId = categoryIdByName.get(row.category.toLowerCase());
-              if (catId) nextGstMap[catId] = Number(row.gst_percentage);
-            }
-          });
-          setGstRates(nextGstMap);
-        } catch (e) { console.error('Failed to load GST config', e); }
-
-        try {
-          const layoutResp = await apiClient.get('/receipt-layout');
-          setReceiptLayout(layoutResp.data);
-        } catch (e) { console.error('Failed to load receipt layout', e); }
-
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Error loading POS data:', error);
-        setIsLoading(false);
+      // Auto-seed tables 1-10 if DB has none
+      if ((tablesResp.data ?? []).length === 0) {
+        await Promise.allSettled(
+          Array.from({ length: 10 }, (_, i) =>
+            apiClient.post('/tables', { table_number: String(i + 1) })
+          )
+        );
+        const reloaded = await apiClient.get<Array<{ table_id: string; table_number: string; status: string }>>('/tables');
+        tablesResp.data = reloaded.data;
       }
-    };
+
+      const cats: MenuCategory[] = (catsResp.data ?? []).map((c) => ({
+        id: String(c.id), name: c.name, defaultGst: 0,
+      }));
+      const categoryIdByName = new Map(cats.map((c) => [c.name.toLowerCase(), c.id]));
+
+      const allItems: MenuItem[] = (itemsResp.data ?? []).map((item) => ({
+        id: String(item.id),
+        categoryId: categoryIdByName.get(item.category.toLowerCase()) ?? 'unknown',
+        name: item.name, price: Number(item.selling_price), description: '',
+        isVegetarian: true, isAvailable: item.is_active, gstRate: 0,
+        stockType: item.stock_type, stockQuantity: item.stock_quantity ?? 0,
+        image: item.image_url ? (item.image_url.startsWith('http') || item.image_url.startsWith('data:')
+          ? item.image_url : `${apiClient.defaults.baseURL?.replace('/api', '')}/${item.image_url}`) : undefined,
+      }));
+
+      const tables = tablesResp.data ?? [];
+      setDbTables(tables);
+      // Auto-select first free table
+      const firstFree = tables.find(t => t.status === 'free');
+      if (firstFree) {
+        setSelectedTable(firstFree.table_id);
+        setSelectedTableLabel(`Table ${firstFree.table_number}`);
+      }
+
+      setCategories(cats);
+      setItems(allItems);
+      setFilteredItems(allItems);
+
+      try {
+        const gstConfigResp = await apiClient.get<Array<{ category: string; gst_percentage: string; is_active: boolean }>>('/gst-config');
+        const nextGstMap: { [key: string]: number } = {};
+        (gstConfigResp.data ?? []).forEach(row => {
+          if (row.is_active) {
+            const catId = categoryIdByName.get(row.category.toLowerCase());
+            if (catId) nextGstMap[catId] = Number(row.gst_percentage);
+          }
+        });
+        setGstRates(nextGstMap);
+      } catch (e) { console.error('Failed to load GST config', e); }
+
+      try {
+        const layoutResp = await apiClient.get('/receipt-layout');
+        setReceiptLayout(layoutResp.data);
+      } catch (e) { console.error('Failed to load receipt layout', e); }
+
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error loading POS data:', error);
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadData();
   }, []);
+
+  const fetchTableOrders = useCallback(async (tableId: string) => {
+    const table = dbTables.find(t => t.table_id === tableId);
+    if (!table || table.status !== 'occupied') {
+      setExistingOrders([]);
+      return;
+    }
+
+    setIsLoadingOrders(true);
+    try {
+      const response = await apiClient.get(`/tables/${tableId}/orders`);
+      setExistingOrders(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch table orders:', error);
+      setExistingOrders([]);
+    } finally {
+      setIsLoadingOrders(false);
+    }
+  }, [dbTables]);
+
+  useEffect(() => {
+    if (selectedTable) {
+      fetchTableOrders(selectedTable);
+    }
+  }, [selectedTable, fetchTableOrders]);
+
+  const handleImageFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      setErrorMessage('Please select a valid image file.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMessage('Image must be smaller than 5MB.');
+      return;
+    }
+    setIsUploadingImage(true);
+    try {
+      const base64 = await compressImage(file);
+      setForm((prev) => ({ ...prev, image_url: base64 }));
+      setImagePreview(base64);
+    } catch {
+      setErrorMessage('Failed to process image.');
+    } finally {
+      setIsUploadingImage(false);
+    }
+  }, []);
+
+  function removeImage() {
+    setForm((prev) => ({ ...prev, image_url: null }));
+    setImagePreview(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+
+  function openCreateModal() {
+    setEditingItem(null);
+    setForm(EMPTY_FORM);
+    setFormErrors({});
+    setImagePreview(null);
+    setIsFormOpen(true);
+  }
+
+  function openEditModal(item: MenuItem) {
+    const categoryName = categories.find(c => c.id === item.categoryId)?.name || '';
+    setEditingItem(item);
+    setForm({
+      name: item.name,
+      selling_price: item.price.toFixed(2),
+      category: categoryName,
+      stock_quantity: String(item.stockQuantity ?? 0),
+      stock_type: item.stockType,
+      is_active: item.isAvailable,
+      image_url: item.image || null,
+    });
+    setFormErrors({});
+    setImagePreview(item.image || null);
+    setIsFormOpen(true);
+  }
+
+  function validateForm(): boolean {
+    const nextErrors: Partial<Record<keyof ItemForm, string>> = {};
+    if (!form.name.trim()) nextErrors.name = 'Item name is required.';
+    const price = Number(form.selling_price);
+    if (!form.selling_price || !Number.isFinite(price) || price <= 0) nextErrors.selling_price = 'Selling price must be > 0.';
+    if (!form.category.trim()) nextErrors.category = 'Category is required.';
+    const qty = Number(form.stock_quantity);
+    if (!Number.isInteger(qty) || qty < 0) nextErrors.stock_quantity = 'Stock quantity must be >= 0.';
+    setFormErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  }
+
+  async function handleItemSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validateForm()) return;
+    setIsSaving(true);
+    setErrorMessage(null);
+    const payload = {
+      name: form.name.trim(),
+      selling_price: Number(form.selling_price),
+      category: form.category.trim(),
+      stock_quantity: Number(form.stock_quantity),
+      stock_type: form.stock_type,
+      image_url: form.image_url,
+      ...(editingItem ? { is_active: form.is_active } : {}),
+    };
+    try {
+      if (editingItem) {
+        await apiClient.put(`/items/${editingItem.id}`, payload);
+      } else {
+        await apiClient.post('/items', payload);
+      }
+      setIsFormOpen(false);
+      await loadData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message ?? 'Failed to save item.');
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleCreateCategory() {
+    const trimmedName = newCategoryName.trim();
+    if (!trimmedName) {
+      setErrorMessage('Category name is required.');
+      return;
+    }
+
+    // Check for redundant category
+    const isRedundant = categories.some(
+      (cat) => cat.name.toLowerCase() === trimmedName.toLowerCase()
+    );
+
+    if (isRedundant) {
+      setErrorMessage(`Category "${trimmedName}" already exists.`);
+      return;
+    }
+
+    setIsCategorySaving(true);
+    try {
+      await apiClient.post('/categories', { name: trimmedName });
+      setNewCategoryName('');
+      setIsCategoryDialogOpen(false);
+      await loadData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message ?? 'Failed to create category.');
+    } finally {
+      setIsCategorySaving(false);
+    }
+  }
+
+  async function handleAddTable() {
+    if (!newTableNumber.trim()) return;
+    setIsAddingTable(true);
+    try {
+      await apiClient.post('/tables', { 
+        table_number: newTableNumber.trim(),
+        capacity: Number(newTableCapacity)
+      });
+      setNewTableNumber('');
+      setIsAddTableDialogOpen(false);
+      await loadData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message ?? 'Failed to add table.');
+    } finally {
+      setIsAddingTable(false);
+    }
+  }
 
   useEffect(() => {
     console.log('Filtering items - Active Category:', activeCategory, 'Search Query:', searchQuery);
@@ -477,6 +750,155 @@ export default function POSTerminal() {
           </div>
         );
 
+      case 'catalog':
+        return (
+          <div className="flex flex-col h-full">
+            {/* Categories Bar */}
+            <div className="bg-white border-b px-6 py-3">
+              <div className="flex gap-2 overflow-x-auto">
+                <Button 
+                  variant={activeCategory === 'all' ? 'default' : 'outline'}
+                  className={cn("rounded-lg px-4 h-8 text-xs", activeCategory === 'all' && "bg-blue-500 text-white")}
+                  onClick={() => setActiveCategory('all')}
+                >
+                  All Items
+                </Button>
+                {categories.map((cat) => (
+                  <Button 
+                    key={cat.id}
+                    variant={activeCategory === cat.id ? 'default' : 'outline'}
+                    className={cn("rounded-lg px-4 h-8 text-xs transition-all", activeCategory === cat.id && "bg-blue-500 text-white shadow-md")}
+                    onClick={() => setActiveCategory(cat.id)}
+                  >
+                    {cat.name}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white border-b px-6 py-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Item Catalog</h2>
+                <p className="text-sm text-gray-600">Add or Manage items and categories.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={openCreateModal} className="gap-2">
+                  <Plus size={14} /> Add Item
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="gap-2">
+                  <Plus size={14} /> Add Category
+                </Button>
+                <div className="text-sm text-gray-500 ml-4">{filteredItems.length} items</div>
+              </div>
+            </div>
+
+            {errorMessage && (
+              <div className="m-6 bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg flex items-center justify-between">
+                <p className="text-sm font-medium">{errorMessage}</p>
+                <button onClick={() => setErrorMessage(null)}>
+                  <X size={16} />
+                </button>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100 hover:scrollbar-thumb-gray-400 p-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {filteredItems.map(item => {
+                  const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
+                  const isInCart = cart.find(cartItem => cartItem.id === item.id);
+                  const categoryLabel = categories.find(cat => cat.id === item.categoryId)?.name ?? 'Uncategorized';
+
+                  return (
+                    <Card
+                      key={item.id}
+                      className={cn(
+                        "bg-white border shadow-sm hover:shadow-lg transition-all group relative",
+                        isInCart && "ring-2 ring-blue-500"
+                      )}
+                    >
+                      {isInCart && (
+                        <div className="absolute top-2 right-2 bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center text-xs font-bold z-10">
+                          {isInCart.quantity}
+                        </div>
+                      )}
+                      
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); openEditModal(item); }}
+                        className="absolute top-2 left-2 bg-white/90 p-1.5 rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-white text-gray-700"
+                        title="Edit Item"
+                      >
+                        <Pencil size={14} />
+                      </button>
+
+                      <div className="aspect-square relative bg-gray-100 overflow-hidden">
+                        <img
+                          src={item.image || `https://api.dicebear.com/7.x/initials/svg?seed=${item.name}`}
+                          alt={item.name}
+                          className="object-cover w-full h-full group-hover:scale-105 transition-transform"
+                        />
+                      </div>
+                      <CardContent className="p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h3 className="font-semibold text-sm truncate">{item.name}</h3>
+                            <p className="text-xs text-gray-500 truncate">{categoryLabel}</p>
+                          </div>
+                          <span className={cn(
+                            "text-[10px] px-2 py-1 rounded-full font-medium whitespace-nowrap",
+                            item.isAvailable ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"
+                          )}>
+                            {item.isAvailable ? 'Available' : 'Inactive'}
+                          </span>
+                        </div>
+                        <p className="text-blue-600 font-bold text-sm mt-1">Rs {item.price}</p>
+                        <p className="text-xs text-gray-500">Stock: {item.stockType === 'limited' ? item.stockQuantity : 'Unlimited'}</p>
+
+                        <div className="mt-2">
+                        {item.isAvailable && (
+                          isInCart ? (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateQuantity(item.id, -1);
+                                }}
+                                className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
+                              >
+                                <Minus size={10} />
+                              </button>
+                              <span className="w-8 text-center text-sm font-medium">{isInCart.quantity}</span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateQuantity(item.id, 1);
+                                }}
+                                className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-gray-600"
+                              >
+                                <Plus size={10} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addToCart(item);
+                              }}
+                              className="w-full bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 rounded"
+                            >
+                              Add to Cart
+                            </button>
+                          )
+                        )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        );
+
       case 'summary':
         return (
           <div className="flex flex-col gap-4 h-full">
@@ -698,17 +1120,57 @@ export default function POSTerminal() {
   };
 
   const renderSidebar = () => {
-    if (activeWorkflow === 'categories' || activeWorkflow === 'summary') {
+    if (activeWorkflow === 'categories' || activeWorkflow === 'catalog' || activeWorkflow === 'summary') {
       return (
         <div className="flex flex-col h-full">
-          {/* Order Info Section - Smaller */}
+          {/* Table Management Section - Based on Workflow Diagram */}
           <div className="border-b bg-white p-4">
-            <h3 className="text-sm font-semibold mb-3">Order Info</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <UtensilsCrossed size={14} className="text-blue-500" />
+                Table Selection
+              </h3>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6 text-blue-500 hover:bg-blue-50"
+                onClick={() => setIsAddTableDialogOpen(true)}
+              >
+                <Plus size={14} />
+              </Button>
+            </div>
+            
+            <div className="grid grid-cols-4 gap-2 max-h-32 overflow-y-auto pr-1 scrollbar-thin">
+              {dbTables.map((t) => (
+                <button
+                  key={t.table_id}
+                  onClick={() => {
+                    setSelectedTable(t.table_id);
+                    setSelectedTableLabel(`Table ${t.table_number}`);
+                  }}
+                  className={cn(
+                    "flex flex-col items-center justify-center py-2 rounded-md border transition-all text-[10px] font-bold",
+                    selectedTable === t.table_id
+                      ? "bg-blue-500 text-white border-blue-600 shadow-sm scale-95"
+                      : t.status === 'occupied'
+                        ? "bg-amber-50 text-amber-600 border-amber-200"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"
+                  )}
+                >
+                  <span className="text-xs">T{t.table_number}</span>
+                  <div className={cn(
+                    "w-1.5 h-1.5 rounded-full mt-1",
+                    t.status === 'occupied' ? "bg-amber-500" : "bg-emerald-500"
+                  )} />
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-4">
               <div>
-                <label className="text-xs font-medium text-gray-700">Type</label>
+                <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 block">Order Type</label>
                 <select 
-                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-sm"
+                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
                   value={orderType}
                   onChange={(e) => setOrderType(e.target.value)}
                 >
@@ -718,28 +1180,9 @@ export default function POSTerminal() {
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-700">Table</label>
-                <select
-                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-sm"
-                  value={selectedTable}
-                  onChange={(e) => {
-                    const tbl = dbTables.find(t => t.table_id === e.target.value);
-                    setSelectedTable(e.target.value);
-                    setSelectedTableLabel(tbl ? `Table ${tbl.table_number}` : 'Select Table');
-                  }}
-                >
-                  <option value="">-- Select Table --</option>
-                  {dbTables.map(t => (
-                    <option key={t.table_id} value={t.table_id}>
-                      Table {t.table_number} ({t.status})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-700">Waiter</label>
+                <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 block">Waiter</label>
                 <select 
-                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-sm"
+                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
                   value={selectedWaiter}
                   onChange={(e) => setSelectedWaiter(e.target.value)}
                 >
@@ -747,24 +1190,57 @@ export default function POSTerminal() {
                   <option>Sarah Doe</option>
                 </select>
               </div>
-              <div>
-                <label className="text-xs font-medium text-gray-700">Guests</label>
-                <Input 
-                  type="number" 
-                  value={guests} 
-                  onChange={(e) => setGuests(Number(e.target.value))}
-                  className="h-8 text-sm"
-                />
-              </div>
             </div>
           </div>
 
           {/* Order Summary Section with Items */}
-          <div className="flex-1 border-b bg-white flex flex-col">
-            <div className="p-4 border-b">
-              <h3 className="text-sm font-semibold">Order Summary</h3>
+          <div className="flex-1 border-b bg-white flex flex-col min-h-0">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <ShoppingCart size={14} className="text-blue-500" />
+                Current Order
+              </h3>
+              {selectedTable && (
+                <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-600 px-2 py-0">
+                  {selectedTableLabel}
+                </Badge>
+              )}
             </div>
             
+            {/* Running Orders for Occupied Table */}
+            {existingOrders.length > 0 && (
+              <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 max-h-40 overflow-y-auto">
+                <h4 className="text-[10px] font-bold text-amber-800 uppercase mb-2 flex items-center justify-between">
+                  Running Orders
+                  <span className="bg-amber-200 text-amber-800 px-1.5 rounded-full">{existingOrders.length}</span>
+                </h4>
+                <div className="space-y-2">
+                  {existingOrders.map((order: any, idx: number) => (
+                    <div key={order.order_id || idx} className="text-[11px] border-l-2 border-amber-300 pl-2 py-1">
+                      <div className="flex justify-between font-medium">
+                        <span>Order #{order.order_id?.slice(-4).toUpperCase()}</span>
+                        <span className="text-amber-600">{order.status}</span>
+                      </div>
+                      <div className="text-gray-500">
+                        {order.items?.map((item: any, idx: number) => (
+                          <div key={item.id || `running-item-${idx}`} className="flex justify-between">
+                            <span>• {item.name || item.item_name}</span>
+                            <span>x{item.quantity}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {isLoadingOrders && (
+              <div className="p-4 text-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mx-auto" />
+                <p className="text-[10px] text-gray-400 mt-1">Loading running orders...</p>
+              </div>
+            )}
+
             {/* Items List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {cart.length === 0 ? (
@@ -808,9 +1284,12 @@ export default function POSTerminal() {
                 })
               )}
             </div>
+          </div>
 
-            {/* Totals */}
-            <div className="p-4 border-t bg-gray-50 space-y-2">
+          {/* Place Order Section */}
+          <div className="bg-white p-4 border-t space-y-3">
+            {/* Totals moved here */}
+            <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Subtotal</span>
                 <span className="font-medium">Rs {totals.subtotal.toFixed(2)}</span>
@@ -829,31 +1308,28 @@ export default function POSTerminal() {
               <div className="pt-2 border-t">
                 <div className="flex justify-between font-bold">
                   <span>Total</span>
-                  <span className="text-blue-600">Rs {totals.total.toFixed(2)}</span>
+                  <span className="text-blue-600 text-lg">Rs {totals.total.toFixed(2)}</span>
                 </div>
               </div>
 
-              <div className="space-y-2 pt-2">
+              <div className="grid grid-cols-2 gap-2 pt-2">
                 <Button 
                   variant="outline" 
-                  className="w-full justify-start gap-2 h-8 text-sm"
+                  className="w-full justify-center gap-2 h-8 text-[10px]"
                   onClick={() => setActiveWorkflow('summary')}
                 >
-                  <CheckCircle2 size={14} /> View Details
+                  <CheckCircle2 size={12} /> View Details
                 </Button>
                 <Button 
                   variant="outline" 
-                  className="w-full justify-start gap-2 h-8 text-sm"
+                  className="w-full justify-center gap-2 h-8 text-[10px]"
                   onClick={() => setActiveWorkflow('gst')}
                 >
-                  <Percent size={14} /> View GST Rates
+                  <Percent size={12} /> GST Rates
                 </Button>
               </div>
             </div>
-          </div>
 
-          {/* Place Order Section */}
-          <div className="flex-1 bg-white p-6 flex flex-col justify-end space-y-3">
             {orderError && (
               <p className="text-xs text-red-500 text-center">{orderError}</p>
             )}
@@ -936,17 +1412,21 @@ export default function POSTerminal() {
                 <p className="text-sm text-gray-600">RestoBill Restaurant</p>
               </div>
               <div className="flex items-center gap-3">
-                {activeWorkflow === 'categories' && (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                    <Input 
-                      placeholder="Search items..." 
-                      className="pl-10 h-10 w-64"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                  </div>
-                )}
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                  <Input 
+                    placeholder="Search items..." 
+                    className="pl-10 h-10 w-64"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                <Button size="sm" onClick={openCreateModal} className="h-10 gap-2">
+                  <Plus size={16} /> Add Item
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setIsCategoryDialogOpen(true)} className="h-10 gap-2">
+                  <Plus size={16} /> Add Category
+                </Button>
                 <Button 
                   onClick={handleNewBill}
                   className="h-10 gap-2"
@@ -977,6 +1457,171 @@ export default function POSTerminal() {
               ))}
             </div>
           </div>
+
+          <Dialog open={isCategoryDialogOpen} onOpenChange={setIsCategoryDialogOpen}>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Add New Category</DialogTitle>
+                <DialogDescription>
+                  Enter a name for the new category.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Category Name</label>
+                  <Input
+                    placeholder="e.g. Beverages, Main Course"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleCreateCategory} disabled={isCategorySaving}>
+                  {isCategorySaving ? 'Saving...' : 'Create Category'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isAddTableDialogOpen} onOpenChange={setIsAddTableDialogOpen}>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Add New Table</DialogTitle>
+                <DialogDescription>
+                  Quickly add a table to the floor plan.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Table Number</label>
+                  <Input
+                    placeholder="e.g. 11"
+                    value={newTableNumber}
+                    onChange={(e) => setNewTableNumber(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Capacity (Seats)</label>
+                  <Input
+                    type="number"
+                    value={newTableCapacity}
+                    onChange={(e) => setNewTableCapacity(e.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddTableDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleAddTable} disabled={isAddingTable}>
+                  {isAddingTable ? 'Adding...' : 'Add Table'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isFormOpen} onOpenChange={setIsFormOpen}>
+            <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingItem ? 'Edit Item' : 'Add New Item'}</DialogTitle>
+                <DialogDescription>
+                  {editingItem ? 'Update the details of this item.' : 'Fill in the details for the new item.'}
+                </DialogDescription>
+              </DialogHeader>
+
+              <form onSubmit={handleItemSubmit} className="space-y-4 py-4">
+                <div 
+                  className={cn(
+                    "relative aspect-video rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-colors overflow-hidden group",
+                    isDragging ? "border-primary bg-primary/5" : "border-muted-foreground/20 hover:border-primary/50",
+                    imagePreview && "border-none"
+                  )}
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const file = e.dataTransfer.files?.[0];
+                    if (file) handleImageFile(file);
+                  }}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {imagePreview ? (
+                    <>
+                      <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <Button type="button" variant="secondary" size="sm" className="h-8" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+                          Change
+                        </Button>
+                        <Button type="button" variant="destructive" size="sm" className="h-8" onClick={(e) => { e.stopPropagation(); removeImage(); }}>
+                          Remove
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                      <div className="p-3 rounded-full bg-muted">
+                        {isUploadingImage ? <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" /> : <ImageIcon size={24} />}
+                      </div>
+                      <div className="text-center">
+                        <p className="text-sm font-medium">Click or drag to upload image</p>
+                        <p className="text-xs">Supports JPG, PNG (Max 500KB)</p>
+                      </div>
+                    </div>
+                  )}
+                  <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) handleImageFile(file); }} />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Item Name*</label>
+                    <Input value={form.name} onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Masala Dosa" className={formErrors.name ? "border-destructive" : ""} />
+                    {formErrors.name && <p className="text-[10px] text-destructive">{formErrors.name}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Category*</label>
+                    <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.category} onChange={(e) => setForm(f => ({ ...f, category: e.target.value }))}>
+                      <option value="">Select Category</option>
+                      {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                    </select>
+                    {formErrors.category && <p className="text-[10px] text-destructive">{formErrors.category}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Selling Price (Rs)*</label>
+                    <Input type="number" step="0.01" value={form.selling_price} onChange={(e) => setForm(f => ({ ...f, selling_price: e.target.value }))} placeholder="0.00" className={formErrors.selling_price ? "border-destructive" : ""} />
+                    {formErrors.selling_price && <p className="text-[10px] text-destructive">{formErrors.selling_price}</p>}
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Stock Type</label>
+                    <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={form.stock_type} onChange={(e) => setForm(f => ({ ...f, stock_type: e.target.value as StockType }))}>
+                      <option value="unlimited">Unlimited</option>
+                      <option value="limited">Limited</option>
+                    </select>
+                  </div>
+                  {form.stock_type === 'limited' && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium">Stock Quantity</label>
+                      <Input type="number" value={form.stock_quantity} onChange={(e) => setForm(f => ({ ...f, stock_quantity: e.target.value }))} className={formErrors.stock_quantity ? "border-destructive" : ""} />
+                      {formErrors.stock_quantity && <p className="text-[10px] text-destructive">{formErrors.stock_quantity}</p>}
+                    </div>
+                  )}
+                  {editingItem && (
+                    <div className="flex items-center gap-2 pt-8">
+                      <input type="checkbox" id="is_active" checked={form.is_active} onChange={(e) => setForm(f => ({ ...f, is_active: e.target.checked }))} className="rounded border-gray-300" />
+                      <label htmlFor="is_active" className="text-sm font-medium">Available for Sale</label>
+                    </div>
+                  )}
+                </div>
+
+                <DialogFooter className="pt-4">
+                  <Button type="button" variant="outline" onClick={() => setIsFormOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={isSaving || isUploadingImage}>
+                    {isSaving ? 'Saving...' : (editingItem ? 'Update Item' : 'Create Item')}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
 
           {/* Content Section */}
           <div className="flex-1 flex">

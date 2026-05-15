@@ -19,6 +19,10 @@ const app = express();
 
 app.use(cors({
   origin: [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:4200",
+    "http://127.0.0.1:4200",
     "https://resto-maneger-smd1.vercel.app"
   ],
   credentials: true,

@@ -388,28 +388,105 @@ export default function OrdersPage() {
         <Dialog open={billOpen} onOpenChange={setBillOpen}>
           <DialogContent className="max-w-sm">
             <DialogHeader>
-              <DialogTitle className="text-center">Bill Receipt</DialogTitle>
-              <DialogDescription className="text-center">{billOrder ? shortId(billOrder.order_id) : ''}</DialogDescription>
+              <DialogTitle className="text-center text-sm font-normal p-0 m-0">
+                <div style={{
+                  fontFamily: 'monospace',
+                  border: '1px dashed #000',
+                  padding: '6px 12px',
+                  textAlign: 'center',
+                  fontSize: '14px',
+                  fontWeight: 'normal',
+                }}>
+                  RestroManager Hotel
+                </div>
+              </DialogTitle>
+              <DialogDescription className="sr-only">Bill Receipt</DialogDescription>
             </DialogHeader>
             {billOrder && (
-              <div className="space-y-3 font-mono text-sm">
-                <div className="text-center border-b pb-2">
-                  <p className="font-bold">Table: {billOrder.table_number || billOrder.table_id}</p>
-                  <p className="text-xs text-muted-foreground">{fmtDate(billOrder.created_at)}</p>
+              <div className="flex flex-col gap-0 font-mono text-sm" style={{ fontSize: '12px', lineHeight: '1.6' }}>
+                {/* Order info - left aligned */}
+                <div style={{ fontWeight: 'bold', fontSize: '13px', marginBottom: '8px' }}>
+                  <div>ORDER NO: #{shortId(billOrder.order_id)}</div>
+                  <div>TABLE: {billOrder.table_number || billOrder.table_id}</div>
+                  <div style={{ fontWeight: 'normal', fontSize: '12px' }}>DATE & TIME:{fmtDate(billOrder.created_at)}</div>
                 </div>
-                {safeItems(billOrder.items).map((item, i) => (
-                  <div key={i} className="flex justify-between">
-                    <span>{item.item_name || `Item #${item.item_id}`} × {item.quantity}</span>
-                    <span>₹{(item.quantity * Number(item.price_at_billing)).toFixed(2)}</span>
+
+                {/* Dashed separator */}
+                <div style={{ borderBottom: '1px dashed #000', marginBottom: '8px' }} />
+
+                {/* Items header */}
+                <div className="flex" style={{ marginBottom: '4px', fontWeight: 'bold', fontSize: '11px' }}>
+                  <span style={{ flex: 2, textAlign: 'left' }}>ITEM</span>
+                  <span style={{ flex: 0.5, textAlign: 'center' }}>QTY</span>
+                  <span style={{ flex: 1, textAlign: 'right' }}>PRICE</span>
+                  <span style={{ flex: 1, textAlign: 'right' }}>TOTAL</span>
+                </div>
+
+                {/* Dashed separator */}
+                <div style={{ borderBottom: '1px dashed #000', marginBottom: '6px' }} />
+
+                {/* Items */}
+                <div style={{ marginBottom: '8px' }}>
+                  {safeItems(billOrder.items).map((item, i) => (
+                    <div key={i} className="flex" style={{ marginBottom: '4px' }}>
+                      <span style={{ flex: 2, textAlign: 'left' }}>{item.item_name || `Item #${item.item_id}`}</span>
+                      <span style={{ flex: 0.5, textAlign: 'center' }}>{item.quantity}</span>
+                      <span style={{ flex: 1, textAlign: 'right' }}>{Number(item.price_at_billing).toFixed(2)}</span>
+                      <span style={{ flex: 1, textAlign: 'right', fontWeight: 'bold' }}>{(item.quantity * Number(item.price_at_billing)).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Dashed separator */}
+                <div style={{ borderBottom: '1px dashed #000', marginBottom: '8px' }} />
+
+                {/* Totals */}
+                <div style={{ fontSize: '13px' }}>
+                  <div className="flex justify-between" style={{ marginBottom: '4px' }}>
+                    <span>Subtotal</span>
+                    <span>Rs {billSubtotal.toFixed(2)}</span>
                   </div>
-                ))}
-                <div className="border-t pt-2 space-y-1">
-                  <div className="flex justify-between"><span>Subtotal</span><span>₹{billSubtotal.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>CGST (2.5%)</span><span>₹{billCGST.toFixed(2)}</span></div>
-                  <div className="flex justify-between"><span>SGST (2.5%)</span><span>₹{billSGST.toFixed(2)}</span></div>
-                  <div className="flex justify-between font-bold text-base border-t pt-1">
-                    <span>Grand Total</span><span className="text-primary">₹{billTotal.toFixed(2)}</span>
+                  <div className="flex justify-between" style={{ marginBottom: '2px' }}>
+                    <span>CGST (2.5%)</span>
+                    <span>Rs {billCGST.toFixed(2)}</span>
                   </div>
+                  <div className="flex justify-between" style={{ marginBottom: '8px' }}>
+                    <span>SGST (2.5%)</span>
+                    <span>Rs {billSGST.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between" style={{
+                    fontWeight: 'bold',
+                    fontSize: '15px',
+                    borderTop: '1px dashed #000',
+                    paddingTop: '8px',
+                  }}>
+                    <span>GRAND TOTAL</span>
+                    <span>Rs {billTotal.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div style={{
+                  textAlign: 'center',
+                  borderTop: '1px dashed #000',
+                  paddingTop: '12px',
+                  marginTop: '12px',
+                  fontSize: '11px',
+                  fontStyle: 'italic',
+                }}>
+                  Thank you for visiting! Come again.
+                </div>
+
+                <div style={{
+                  textAlign: 'center',
+                  fontSize: '9px',
+                  color: 'rgba(0,0,0,0.5)',
+                  fontStyle: 'italic',
+                  marginTop: '8px',
+                  borderTop: '1px solid rgba(0,0,0,0.1)',
+                  paddingTop: '6px',
+                }}>
+                  Software by RestroManager
                 </div>
               </div>
             )}
