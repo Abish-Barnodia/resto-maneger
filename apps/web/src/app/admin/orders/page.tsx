@@ -487,6 +487,7 @@ export default function OrdersPage() {
                   paddingTop: '6px',
                 }}>
                   Software by RestroManager
+                </div>
               </div>
             )}
           </DialogContent>
