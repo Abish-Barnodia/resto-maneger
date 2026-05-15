@@ -20,10 +20,12 @@ import {
   PowerOff,
   Upload,
   X,
-  ImageIcon
+  ImageIcon,
+  UtensilsCrossed
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
   DialogContent,
@@ -143,15 +145,22 @@ export default function POSTerminal() {
   const [selectedTable, setSelectedTable] = useState('');
   const [selectedTableLabel, setSelectedTableLabel] = useState('Select Table');
   const [dbTables, setDbTables] = useState<{ table_id: string; table_number: string; status: string }[]>([]);
+  const [existingOrders, setExistingOrders] = useState<any[]>([]);
+  const [isLoadingOrders, setIsLoadingOrders] = useState(false);
   const [selectedWaiter, setSelectedWaiter] = useState('John Paul');
   const [guests, setGuests] = useState(4);
   const [activeWorkflow, setActiveWorkflow] = useState('categories');
+  const [isAddTableDialogOpen, setIsAddTableDialogOpen] = useState(false);
+  const [newTableNumber, setNewTableNumber] = useState('');
+  const [newTableCapacity, setNewTableCapacity] = useState('4');
+  const [isAddingTable, setIsAddingTable] = useState(false);
   const [receiptLayout, setReceiptLayout] = useState<any>(null);
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [isReceiptOpen, setIsReceiptOpen] = useState(false);
   const [isGeneratingBill, setIsGeneratingBill] = useState(false);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
+  const [showWipDialog, setShowWipDialog] = useState(false);
 
   // Catalog CRUD states
   const [isSaving, setIsSaving] = useState(false);
@@ -262,6 +271,31 @@ export default function POSTerminal() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const fetchTableOrders = useCallback(async (tableId: string) => {
+    const table = dbTables.find(t => t.table_id === tableId);
+    if (!table || table.status !== 'occupied') {
+      setExistingOrders([]);
+      return;
+    }
+
+    setIsLoadingOrders(true);
+    try {
+      const response = await apiClient.get(`/tables/${tableId}/orders`);
+      setExistingOrders(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch table orders:', error);
+      setExistingOrders([]);
+    } finally {
+      setIsLoadingOrders(false);
+    }
+  }, [dbTables]);
+
+  useEffect(() => {
+    if (selectedTable) {
+      fetchTableOrders(selectedTable);
+    }
+  }, [selectedTable, fetchTableOrders]);
 
   const handleImageFile = useCallback(async (file: File) => {
     if (!file.type.startsWith('image/')) {
@@ -385,6 +419,24 @@ export default function POSTerminal() {
       setErrorMessage(error?.response?.data?.message ?? 'Failed to create category.');
     } finally {
       setIsCategorySaving(false);
+    }
+  }
+
+  async function handleAddTable() {
+    if (!newTableNumber.trim()) return;
+    setIsAddingTable(true);
+    try {
+      await apiClient.post('/tables', { 
+        table_number: newTableNumber.trim(),
+        capacity: Number(newTableCapacity)
+      });
+      setNewTableNumber('');
+      setIsAddTableDialogOpen(false);
+      await loadData();
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message ?? 'Failed to add table.');
+    } finally {
+      setIsAddingTable(false);
     }
   }
 
@@ -1071,14 +1123,54 @@ export default function POSTerminal() {
     if (activeWorkflow === 'categories' || activeWorkflow === 'catalog' || activeWorkflow === 'summary') {
       return (
         <div className="flex flex-col h-full">
-          {/* Order Info Section - Smaller */}
+          {/* Table Management Section - Based on Workflow Diagram */}
           <div className="border-b bg-white p-4">
-            <h3 className="text-sm font-semibold mb-3">Order Info</h3>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <UtensilsCrossed size={14} className="text-blue-500" />
+                Table Selection
+              </h3>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6 text-blue-500 hover:bg-blue-50"
+                onClick={() => setIsAddTableDialogOpen(true)}
+              >
+                <Plus size={14} />
+              </Button>
+            </div>
+            
+            <div className="grid grid-cols-4 gap-2 max-h-32 overflow-y-auto pr-1 scrollbar-thin">
+              {dbTables.map((t) => (
+                <button
+                  key={t.table_id}
+                  onClick={() => {
+                    setSelectedTable(t.table_id);
+                    setSelectedTableLabel(`Table ${t.table_number}`);
+                  }}
+                  className={cn(
+                    "flex flex-col items-center justify-center py-2 rounded-md border transition-all text-[10px] font-bold",
+                    selectedTable === t.table_id
+                      ? "bg-blue-500 text-white border-blue-600 shadow-sm scale-95"
+                      : t.status === 'occupied'
+                        ? "bg-amber-50 text-amber-600 border-amber-200"
+                        : "bg-white text-gray-600 border-gray-200 hover:border-blue-300"
+                  )}
+                >
+                  <span className="text-xs">T{t.table_number}</span>
+                  <div className={cn(
+                    "w-1.5 h-1.5 rounded-full mt-1",
+                    t.status === 'occupied' ? "bg-amber-500" : "bg-emerald-500"
+                  )} />
+                </button>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mt-4">
               <div>
-                <label className="text-xs font-medium text-gray-700">Type</label>
+                <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 block">Order Type</label>
                 <select 
-                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-sm"
+                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
                   value={orderType}
                   onChange={(e) => setOrderType(e.target.value)}
                 >
@@ -1088,28 +1180,9 @@ export default function POSTerminal() {
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-700">Table</label>
-                <select
-                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-sm"
-                  value={selectedTable}
-                  onChange={(e) => {
-                    const tbl = dbTables.find(t => t.table_id === e.target.value);
-                    setSelectedTable(e.target.value);
-                    setSelectedTableLabel(tbl ? `Table ${tbl.table_number}` : 'Select Table');
-                  }}
-                >
-                  <option value="">-- Select Table --</option>
-                  {dbTables.map(t => (
-                    <option key={t.table_id} value={t.table_id}>
-                      Table {t.table_number} ({t.status})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-700">Waiter</label>
+                <label className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-1 block">Waiter</label>
                 <select 
-                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-sm"
+                  className="w-full h-8 px-2 rounded border border-gray-300 bg-white text-xs font-medium"
                   value={selectedWaiter}
                   onChange={(e) => setSelectedWaiter(e.target.value)}
                 >
@@ -1117,24 +1190,57 @@ export default function POSTerminal() {
                   <option>Sarah Doe</option>
                 </select>
               </div>
-              <div>
-                <label className="text-xs font-medium text-gray-700">Guests</label>
-                <Input 
-                  type="number" 
-                  value={guests} 
-                  onChange={(e) => setGuests(Number(e.target.value))}
-                  className="h-8 text-sm"
-                />
-              </div>
             </div>
           </div>
 
           {/* Order Summary Section with Items */}
-          <div className="flex-1 border-b bg-white flex flex-col">
-            <div className="p-4 border-b">
-              <h3 className="text-sm font-semibold">Order Summary</h3>
+          <div className="flex-1 border-b bg-white flex flex-col min-h-0">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <ShoppingCart size={14} className="text-blue-500" />
+                Current Order
+              </h3>
+              {selectedTable && (
+                <Badge variant="outline" className="text-[10px] border-blue-200 text-blue-600 px-2 py-0">
+                  {selectedTableLabel}
+                </Badge>
+              )}
             </div>
             
+            {/* Running Orders for Occupied Table */}
+            {existingOrders.length > 0 && (
+              <div className="px-4 py-2 bg-amber-50 border-b border-amber-100 max-h-40 overflow-y-auto">
+                <h4 className="text-[10px] font-bold text-amber-800 uppercase mb-2 flex items-center justify-between">
+                  Running Orders
+                  <span className="bg-amber-200 text-amber-800 px-1.5 rounded-full">{existingOrders.length}</span>
+                </h4>
+                <div className="space-y-2">
+                  {existingOrders.map((order: any, idx: number) => (
+                    <div key={order.order_id || idx} className="text-[11px] border-l-2 border-amber-300 pl-2 py-1">
+                      <div className="flex justify-between font-medium">
+                        <span>Order #{order.order_id?.slice(-4).toUpperCase()}</span>
+                        <span className="text-amber-600">{order.status}</span>
+                      </div>
+                      <div className="text-gray-500">
+                        {order.items?.map((item: any, idx: number) => (
+                          <div key={item.id || `running-item-${idx}`} className="flex justify-between">
+                            <span>• {item.name || item.item_name}</span>
+                            <span>x{item.quantity}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {isLoadingOrders && (
+              <div className="p-4 text-center">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mx-auto" />
+                <p className="text-[10px] text-gray-400 mt-1">Loading running orders...</p>
+              </div>
+            )}
+
             {/* Items List */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {cart.length === 0 ? (
@@ -1178,9 +1284,12 @@ export default function POSTerminal() {
                 })
               )}
             </div>
+          </div>
 
-            {/* Totals */}
-            <div className="p-4 border-t bg-gray-50 space-y-2">
+          {/* Place Order Section */}
+          <div className="bg-white p-4 border-t space-y-3">
+            {/* Totals moved here */}
+            <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm">
                 <span className="text-gray-600">Subtotal</span>
                 <span className="font-medium">Rs {totals.subtotal.toFixed(2)}</span>
@@ -1199,31 +1308,28 @@ export default function POSTerminal() {
               <div className="pt-2 border-t">
                 <div className="flex justify-between font-bold">
                   <span>Total</span>
-                  <span className="text-blue-600">Rs {totals.total.toFixed(2)}</span>
+                  <span className="text-blue-600 text-lg">Rs {totals.total.toFixed(2)}</span>
                 </div>
               </div>
 
-              <div className="space-y-2 pt-2">
+              <div className="grid grid-cols-2 gap-2 pt-2">
                 <Button 
                   variant="outline" 
-                  className="w-full justify-start gap-2 h-8 text-sm"
+                  className="w-full justify-center gap-2 h-8 text-[10px]"
                   onClick={() => setActiveWorkflow('summary')}
                 >
-                  <CheckCircle2 size={14} /> View Details
+                  <CheckCircle2 size={12} /> View Details
                 </Button>
                 <Button 
                   variant="outline" 
-                  className="w-full justify-start gap-2 h-8 text-sm"
+                  className="w-full justify-center gap-2 h-8 text-[10px]"
                   onClick={() => setActiveWorkflow('gst')}
                 >
-                  <Percent size={14} /> View GST Rates
+                  <Percent size={12} /> GST Rates
                 </Button>
               </div>
             </div>
-          </div>
 
-          {/* Place Order Section */}
-          <div className="flex-1 bg-white p-6 flex flex-col justify-end space-y-3">
             {orderError && (
               <p className="text-xs text-red-500 text-center">{orderError}</p>
             )}
@@ -1374,6 +1480,41 @@ export default function POSTerminal() {
                 <Button variant="outline" onClick={() => setIsCategoryDialogOpen(false)}>Cancel</Button>
                 <Button onClick={handleCreateCategory} disabled={isCategorySaving}>
                   {isCategorySaving ? 'Saving...' : 'Create Category'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={isAddTableDialogOpen} onOpenChange={setIsAddTableDialogOpen}>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Add New Table</DialogTitle>
+                <DialogDescription>
+                  Quickly add a table to the floor plan.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Table Number</label>
+                  <Input
+                    placeholder="e.g. 11"
+                    value={newTableNumber}
+                    onChange={(e) => setNewTableNumber(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Capacity (Seats)</label>
+                  <Input
+                    type="number"
+                    value={newTableCapacity}
+                    onChange={(e) => setNewTableCapacity(e.target.value)}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddTableDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleAddTable} disabled={isAddingTable}>
+                  {isAddingTable ? 'Adding...' : 'Add Table'}
                 </Button>
               </DialogFooter>
             </DialogContent>
