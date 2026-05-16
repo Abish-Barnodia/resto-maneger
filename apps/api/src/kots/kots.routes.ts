@@ -57,7 +57,7 @@ kotsRouter.get('/section/:sectionId', async (req, res) => {
               k.table_number, k.kot_number, k.order_phase
        FROM section_kots sk
        LEFT JOIN kots k ON k.kot_id = sk.parent_kot_id
-       WHERE sk.section_id = $1
+       WHERE sk.section_name = $1
        ORDER BY sk.generated_at DESC`,
       [sectionId]
     );
@@ -134,20 +134,19 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
   }
 });
 
-// GET /kots/sections - list all kitchen sections with their active KOTs count
+// GET /kots/sections - list all kitchen sections (based on POS categories) with their active KOTs count
 kotsRouter.get('/sections/list', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT s.section_id, s.section_name, s.description, s.is_active,
+      `SELECT c.name as section_id, c.name as section_name, c.name as description, c.is_active,
               COUNT(sk.section_kot_id) FILTER (WHERE sk.status = 'pending') as pending_count
-       FROM sections s
-       LEFT JOIN section_kots sk ON sk.section_id = s.section_id
-       WHERE s.is_active = true
-       GROUP BY s.section_id ORDER BY s.section_name`
+       FROM categories c
+       LEFT JOIN section_kots sk ON sk.section_name = c.name
+       WHERE c.is_active = true
+       GROUP BY c.name ORDER BY c.name`
     );
     res.json(result.rows);
   } catch (err: any) {
     console.error('GET /kots/sections/list error:', err);
     res.status(500).json({ message: 'Failed to fetch sections' });
   }
-});

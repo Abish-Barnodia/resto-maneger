@@ -34,24 +34,77 @@ export default function PosTerminalPage() {
   // Load initial data
   useEffect(() => {
     async function loadData() {
-      const [cats, items, tbls] = await Promise.all([
-        mockDb.getMenuCategories(),
-        mockDb.getMenuItems(),
-        mockDb.getTables()
-      ]);
-      setCategories(cats);
-      setMenuItems(items);
-      setTables(tbls);
-      setIsLoading(false);
+      try {
+        const [catsRes, itemsRes, tblsRes] = await Promise.all([
+          apiClient.get('/categories'),
+          apiClient.get('/items'),
+          apiClient.get('/tables')
+        ]);
+        
+        const cats = catsRes.data.map((c: any) => ({
+          id: c.name, 
+          name: c.name,
+          defaultGst: c.gst_percentage || 5
+        }));
+
+        const items = itemsRes.data.map((i: any) => ({
+          id: i.id.toString(),
+          categoryId: i.category,
+          name: i.name,
+          price: parseFloat(i.selling_price),
+          description: i.description || '',
+          isAvailable: i.is_active,
+          gstRate: i.gst_percentage || 5
+        }));
+
+        const tbls = tblsRes.data.map((t: any) => ({
+          id: t.table_id.toString(),
+          number: t.table_number.toString(),
+          capacity: t.capacity || 4,
+          status: t.status === 'free' ? 'available' : t.status === 'occupied' ? 'occupied' : 'reserved'
+        }));
+
+        setCategories(cats);
+        setMenuItems(items);
+        setTables(tbls);
+      } catch (err) {
+        console.error("Failed to load initial data", err);
+      } finally {
+        setIsLoading(false);
+      }
     }
     loadData();
   }, []);
 
-  // Handle category change
+  // Handle category change (filtering is done on client side since we fetch all items initially)
+  // Or we can just let MenuGrid do it, but MenuGrid expects filtered list? Wait, in original code it calls updateItems.
   useEffect(() => {
     async function updateItems() {
-      const items = await mockDb.getMenuItems(activeCategoryId || undefined);
-      setMenuItems(items);
+      if (activeCategoryId) {
+        const res = await apiClient.get(`/items?category=${encodeURIComponent(activeCategoryId)}`);
+        const items = res.data.map((i: any) => ({
+          id: i.id.toString(),
+          categoryId: i.category,
+          name: i.name,
+          price: parseFloat(i.selling_price),
+          description: i.description || '',
+          isAvailable: i.is_active,
+          gstRate: i.gst_percentage || 5
+        }));
+        setMenuItems(items);
+      } else {
+        const res = await apiClient.get('/items');
+        const items = res.data.map((i: any) => ({
+          id: i.id.toString(),
+          categoryId: i.category,
+          name: i.name,
+          price: parseFloat(i.selling_price),
+          description: i.description || '',
+          isAvailable: i.is_active,
+          gstRate: i.gst_percentage || 5
+        }));
+        setMenuItems(items);
+      }
     }
     if (!isLoading) updateItems();
   }, [activeCategoryId, isLoading]);
@@ -182,7 +235,7 @@ export default function PosTerminalPage() {
               onRemoveItem={handleRemoveItem}
               onPlaceOrder={handlePlaceOrder}
               isLoading={isPlacingOrder}
-              selectedTable={selectedTable}
+              selectedTable={tables.find(t => t.id === selectedTable)?.number || selectedTable}
               onSelectTable={handleSelectTable}
             />
           </div>
@@ -206,10 +259,10 @@ export default function PosTerminalPage() {
             {tables.map(table => (
               <Button
                 key={table.id}
-                variant={selectedTable === table.number ? 'default' : 'outline'}
+                variant={selectedTable === table.id ? 'default' : 'outline'}
                 disabled={table.status === 'occupied' || table.status === 'reserved'}
                 className="h-24 flex flex-col gap-2 rounded-xl relative"
-                onClick={() => confirmTableSelection(table.number)}
+                onClick={() => confirmTableSelection(table.id)}
               >
                 <span className="text-xl font-bold">T{table.number}</span>
                 <span className="text-xs text-muted-foreground">{table.capacity} Seats</span>

@@ -358,4 +358,25 @@ export async function initializeDatabase(): Promise<void> {
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at_timestamp();
   `);
+
+  // ── Seed default kitchen sections ──
+  await pool.query(`
+    INSERT INTO sections (section_name, description, is_active) VALUES
+      ('Kitchen', 'Main kitchen section for food items', true),
+      ('Bar', 'Bar section for alcoholic and mixed drinks', true),
+      ('Ice Cream', 'Ice cream and dessert counter', true),
+      ('Beverage', 'Non-alcoholic beverages, coffee, and juices', true)
+    ON CONFLICT (section_name) DO NOTHING;
+  `);
+
+  // ── Seed item section mappings ──
+  await pool.query(`
+    INSERT INTO item_section_mapping (item_id, section_id)
+    SELECT i.id, s.section_id
+    FROM items i
+    CROSS JOIN (SELECT section_id FROM sections WHERE section_name = 'Kitchen' LIMIT 1) s
+    WHERE NOT EXISTS (
+      SELECT 1 FROM item_section_mapping m WHERE m.item_id = i.id
+    );
+  `);
 }

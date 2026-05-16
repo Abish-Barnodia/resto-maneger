@@ -91,11 +91,9 @@ ordersRouter.post('/:orderId/send-to-kitchen', async (req, res) => {
     // Get items for this order
     const itemsResult = await client.query(
       `SELECT oi.order_item_id, oi.item_id, i.name as item_name, oi.quantity, oi.serial_number,
-              ism.section_id, s.section_name
+              i.category as section_name
        FROM order_items oi
        LEFT JOIN items i ON i.id = oi.item_id
-       LEFT JOIN item_section_mapping ism ON ism.item_id = oi.item_id
-       LEFT JOIN sections s ON s.section_id = ism.section_id
        WHERE oi.order_id = $1`,
       [orderId]
     );
@@ -132,33 +130,30 @@ ordersRouter.post('/:orderId/send-to-kitchen', async (req, res) => {
       );
     }
 
-    // Group items by section (from item_section_mapping in DB - NO hardcoding)
+    // Group items by section (from POS categories)
     const itemsBySection: Record<string, { sectionName: string; items: any[] }> = {};
     const unassignedItems: any[] = [];
 
     for (const item of itemsResult.rows) {
-      if (item.section_id) {
-        if (!itemsBySection[item.section_id]) {
-          itemsBySection[item.section_id] = { sectionName: item.section_name, items: [] };
-        }
-        itemsBySection[item.section_id].items.push(item);
-      } else {
-        unassignedItems.push(item);
+      const secName = item.section_name || 'General';
+      if (!itemsBySection[secName]) {
+        itemsBySection[secName] = { sectionName: secName, items: [] };
       }
+      itemsBySection[secName].items.push(item);
     }
 
     // Create section KOTs from DB-driven mapping
     const sectionKots = [];
     let skSeq = 1;
 
-    for (const [sectionId, { sectionName, items }] of Object.entries(itemsBySection)) {
+    for (const [sectionName, { items }] of Object.entries(itemsBySection)) {
       const sectionKotNumber = `${kotNumber}-S${String(skSeq).padStart(2, '0')}`;
       skSeq++;
 
       const skotResult = await client.query(
         `INSERT INTO section_kots (parent_kot_id, section_id, section_name, section_kot_number, status)
-         VALUES ($1, $2, $3, $4, 'pending') RETURNING *`,
-        [parentKot.kot_id, sectionId, sectionName, sectionKotNumber]
+         VALUES ($1, NULL, $2, $3, 'pending') RETURNING *`,
+        [parentKot.kot_id, sectionName, sectionKotNumber]
       );
       const skot = skotResult.rows[0];
 
@@ -170,26 +165,6 @@ ordersRouter.post('/:orderId/send-to-kitchen', async (req, res) => {
         );
       }
       sectionKots.push({ ...skot, items });
-    }
-
-    // Handle unassigned items in a General section KOT
-    if (unassignedItems.length > 0) {
-      const generalKotNumber = `${kotNumber}-GEN`;
-      const generalSkotResult = await client.query(
-        `INSERT INTO section_kots (parent_kot_id, section_id, section_name, section_kot_number, status)
-         VALUES ($1, NULL, 'General', $2, 'pending') RETURNING *`,
-        [parentKot.kot_id, generalKotNumber]
-      );
-      const generalSkot = generalSkotResult.rows[0];
-
-      for (const item of unassignedItems) {
-        await client.query(
-          `INSERT INTO section_kot_items (section_kot_id, item_id, item_name, quantity, serial_number)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [generalSkot.section_kot_id, item.item_id, item.item_name, item.quantity, item.serial_number]
-        );
-      }
-      sectionKots.push({ ...generalSkot, items: unassignedItems });
     }
 
     // Update order status

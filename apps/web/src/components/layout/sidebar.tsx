@@ -21,18 +21,20 @@ import {
   Settings
 } from 'lucide-react';
 
-const MENU_ITEMS = [
+type MenuItem = { icon: any; label: string; href: string; badge?: number | string };
+
+const MENU_ITEMS: MenuItem[] = [
   { icon: LayoutDashboard, label: 'Dashboard', href: '/admin/dashboard' },
   { icon: Receipt, label: 'POS', href: '/admin/pos' },
-  { icon: FileText, label: 'Orders', href: '/admin/orders', badge: '15' },
-  { icon: UtensilsCrossed, label: 'Kitchen', href: '/admin/kitchen', badge: '15' },
+  { icon: FileText, label: 'Orders', href: '/admin/orders' },
+  { icon: UtensilsCrossed, label: 'KOT', href: '/admin/kitchen' },
   { icon: TableIcon, label: 'Table', href: '/admin/tables' },
-  { icon: CalendarDays, label: 'Reservations', href: '/admin/reservations', badge: '1' },
+  { icon: CalendarDays, label: 'Reservations', href: '/admin/reservations' },
   { icon: Store, label: 'Offering', href: '/admin/offering' },
   { icon: Receipt, label: 'Billing', href: '/admin/billing' },
   { icon: FileText, label: 'Bills', href: '/admin/bills' },
   { icon: Package, label: 'Inventory', href: '/admin/inventory' },
-  { icon: CreditCard, label: 'Payments', href: '/admin/payments', badge: '14' },
+  { icon: CreditCard, label: 'Payments', href: '/admin/payments' },
   { icon: FileText, label: 'Invoice', href: '/admin/invoices' },
   { icon: Settings, label: 'GST Config', href: '/admin/settings/gst' },
   { icon: FileText, label: 'Receipt Layout', href: '/admin/settings/receipt-layout' },
