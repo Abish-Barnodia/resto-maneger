@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import apiClient from '@/services/apiClient';
 import { cn } from '@/lib/utils';
@@ -155,7 +155,7 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
 // ─────────────────────────────────────────────
 //  Main Page
 // ─────────────────────────────────────────────
-export default function KOTPage() {
+function KOTPageInner() {
   const [sections, setSections] = useState<KitchenSection[]>([]);
   const [activeTab, setActiveTab] = useState('all');
   const [kotsBySection, setKotsBySection] = useState<Record<string, SectionKOT[]>>({});
@@ -651,5 +651,13 @@ function DetailRow({ icon, label, value }: { icon: React.ReactNode; label: strin
       <span className="text-[11px] text-gray-400 w-20 shrink-0 pt-0.5">{label}</span>
       <span className="text-[12px] font-semibold text-gray-700 flex-1">{value}</span>
     </div>
+  );
+}
+
+export default function KOTPage() {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center text-gray-400">Loading...</div>}>
+      <KOTPageInner />
+    </Suspense>
   );
 }
