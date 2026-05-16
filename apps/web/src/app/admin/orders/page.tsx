@@ -59,18 +59,36 @@ export default function OrdersPage() {
   const [billOpen, setBillOpen] = useState(false);
   const [billOrder, setBillOrder] = useState<Order | null>(null);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { 
+    load(); 
+    
+    // Auto-refresh orders every 5 seconds for real-time updates
+    const interval = setInterval(() => {
+      load(true);
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
-  async function load() {
-    setIsLoading(true); setErrorMsg(null);
+  async function load(silent = false) {
+    if (!silent) { setIsLoading(true); setErrorMsg(null); }
     try {
       const r = await apiClient.get<Order[]>('/orders');
       const data = (r.data ?? []).map(o => ({ ...o, items: safeItems(o.items) }));
       setOrders(data);
-      if (data.length > 0 && !selected) setSelected(data[0]);
+      // Update selected order if it exists, otherwise set to first
+      if (data.length > 0) {
+        setSelected(prev => {
+          if (!prev) return data[0];
+          const updated = data.find(o => o.order_id === prev.order_id);
+          return updated || prev;
+        });
+      }
     } catch (e: any) {
-      setErrorMsg(e?.response?.data?.message || 'Failed to load orders.');
-    } finally { setIsLoading(false); }
+      if (!silent) setErrorMsg(e?.response?.data?.message || 'Failed to load orders.');
+    } finally { 
+      if (!silent) setIsLoading(false); 
+    }
   }
 
   function openKOT(o: Order) { setKotOrder(o); setSelected(o); setKotOpen(true); }

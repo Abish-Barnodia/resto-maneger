@@ -168,7 +168,7 @@ function KOTPageInner() {
   // Context-based date/time filter (no URL changes)
   const { filterDate, filterTime } = useFilter();
 
-  const fetchSections = useCallback(async () => {
+  const fetchSections = useCallback(async (silent = false) => {
     try {
       const res = await apiClient.get('/kots/sections/list');
       
@@ -192,13 +192,13 @@ function KOTPageInner() {
       } catch (fallbackError) {
         console.error('Fallback also failed:', fallbackError);
       } finally {
-        setLoading(false);
+        if (!silent) setLoading(false);
       }
     }
   }, []);
 
-  const fetchAllKots = useCallback(async (sectionList: KitchenSection[]) => {
-    setLoading(true);
+  const fetchAllKots = useCallback(async (sectionList: KitchenSection[], silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const map: Record<string, SectionKOT[]> = {};
       const flat: SectionKOT[] = [];
@@ -215,15 +215,25 @@ function KOTPageInner() {
       setKotsBySection(map);
       setAllKots(flat);
     } catch (e) { console.error(e); }
-    finally { setLoading(false); }
+    finally { if (!silent) setLoading(false); }
   }, []);
 
   const refresh = useCallback(async () => {
     fetchSections();
   }, [fetchSections]);
 
-  useEffect(() => { fetchSections(); }, [fetchSections]);
-  useEffect(() => { if (sections.length > 0) fetchAllKots(sections); }, [sections, fetchAllKots]);
+  useEffect(() => { 
+    fetchSections(); 
+    
+    // Auto-refresh KOTs every 5 seconds for real-time updates
+    const interval = setInterval(() => {
+      fetchSections(true);
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, [fetchSections]);
+
+  useEffect(() => { if (sections.length > 0) fetchAllKots(sections, true); }, [sections, fetchAllKots]);
 
 
   const advanceStatus = async (nextStatus: string) => {
