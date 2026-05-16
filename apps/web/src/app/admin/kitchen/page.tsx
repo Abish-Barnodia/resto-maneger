@@ -170,33 +170,30 @@ function KOTPageInner() {
 
   const fetchSections = useCallback(async () => {
     try {
-      let res = await apiClient.get('/kots/sections/list');
+      const res = await apiClient.get('/kots/sections/list');
       
-      // If the backend sections table is empty, fallback to fetching categories 
-      // (This acts as a bridge if the user is testing against the un-updated remote API)
       if (!res.data || res.data.length === 0) {
-        try {
-          const catRes = await apiClient.get('/categories');
-          const categoriesAsSections = catRes.data.map((c: any) => ({
-            section_id: c.name, 
-            section_name: c.name,
-            pending_count: '0'
-          }));
-          
-
-          setSections(categoriesAsSections);
-          if (categoriesAsSections.length === 0) setLoading(false);
-          return;
-        } catch {
-          setLoading(false);
-          return;
-        }
+        throw new Error('Empty sections');
       }
       
       setSections(res.data);
     } catch (e) { 
-      console.error(e); 
-      setLoading(false);
+      console.error('sections/list failed, falling back to /categories:', e); 
+      // If the backend sections table is empty or throwing an error, fallback to fetching categories 
+      try {
+        const catRes = await apiClient.get('/categories');
+        const categoriesAsSections = catRes.data.map((c: any) => ({
+          section_id: c.name, 
+          section_name: c.name,
+          pending_count: '0'
+        }));
+        
+        setSections(categoriesAsSections);
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+      } finally {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -252,7 +249,8 @@ function KOTPageInner() {
     finally { setUpdatingStatus(false); }
   };
 
-  const displayedSections = activeTab === 'all' ? sections : sections.filter(s => s.section_id === activeTab);
+  // Always show ALL sections as columns — activeTab only highlights/filters cards within each column
+  const displayedSections = sections;
 
   // Apply date and time filters
   const filteredAllKots = allKots.filter(kot => {
@@ -386,12 +384,22 @@ function KOTPageInner() {
               displayedSections.map(section => {
                 const pal = getSectionPalette(section.section_id);
                 const sectionKots = filteredKotsBySection[section.section_id] || [];
+                // When a specific tab is active, only show cards for that section; otherwise show up to PREVIEW
+                const isHighlighted = activeTab === 'all' || activeTab === section.section_id;
                 const PREVIEW = 5;
-                const shown = activeTab === section.section_id ? sectionKots : sectionKots.slice(0, PREVIEW);
-                const hasMore = sectionKots.length > PREVIEW && activeTab !== section.section_id;
+                const shown = (activeTab === 'all' || activeTab === section.section_id)
+                  ? sectionKots
+                  : [];
+                const hasMore = false;
 
                 return (
-                  <div key={section.section_id} className="flex flex-col min-w-[210px] w-[210px] shrink-0">
+                  <div
+                    key={section.section_id}
+                    className={cn(
+                      'flex flex-col min-w-[210px] w-[210px] shrink-0 transition-opacity',
+                      activeTab !== 'all' && activeTab !== section.section_id ? 'opacity-30' : ''
+                    )}
+                  >
                     {/* Column header */}
                     <div className={cn('flex items-center justify-between mb-3 pb-2 border-b-2', pal.border)}>
                       <div className="flex items-center gap-1.5">
