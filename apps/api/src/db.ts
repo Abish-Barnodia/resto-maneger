@@ -370,14 +370,23 @@ export async function initializeDatabase(): Promise<void> {
   `);
 
   // ── Seed default POS categories (used by KOT dashboard) ──
-  await pool.query(`
-    INSERT INTO categories (name, is_active) VALUES
-      ('Main Course', true),
-      ('Starters', true),
-      ('Beverages', true),
-      ('Sweets', true)
-    ON CONFLICT (name) DO NOTHING;
-  `);
+  try {
+    const seedResult = await pool.query(`
+      INSERT INTO categories (name, is_active) VALUES
+        ('Main Course', true),
+        ('Starters', true),
+        ('Beverages', true),
+        ('Sweets', true)
+      ON CONFLICT (name) DO NOTHING;
+    `);
+    console.log('Categories seed completed, rows affected:', seedResult.rowCount);
+    
+    // Verify categories exist
+    const catCheck = await pool.query('SELECT name FROM categories WHERE is_active = true');
+    console.log('Active categories:', catCheck.rows.map((r: any) => r.name));
+  } catch (catErr) {
+    console.error('Failed to seed categories:', catErr);
+  }
 
   // ── Seed item section mappings ──
   await pool.query(`
