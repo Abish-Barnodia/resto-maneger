@@ -370,20 +370,14 @@ export async function initializeDatabase(): Promise<void> {
   `);
 
   // ── Seed default POS categories (used by KOT dashboard) ──
-  const catTable = await pool.query(`
-    SELECT column_name FROM information_schema.columns
-    WHERE table_name = 'categories' LIMIT 1
+  await pool.query(`
+    INSERT INTO categories (name, is_active) VALUES
+      ('Main Course', true),
+      ('Starters', true),
+      ('Beverages', true),
+      ('Sweets', true)
+    ON CONFLICT (name) DO NOTHING;
   `);
-  if (catTable.rows.length > 0) {
-    await pool.query(`
-      INSERT INTO categories (name, description, gst_percentage, is_active) VALUES
-        ('Main Course', 'Main food items', 5, true),
-        ('Starters', 'Starter and appetizer items', 5, true),
-        ('Beverages', 'Non-alcoholic drinks, juices, coffee', 5, true),
-        ('Sweets', 'Desserts, ice cream and sweets', 5, true)
-      ON CONFLICT (name) DO NOTHING;
-    `);
-  }
 
   // ── Seed item section mappings ──
   await pool.query(`
