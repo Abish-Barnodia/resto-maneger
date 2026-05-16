@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { Sidebar } from './sidebar';
 import { useAuth } from '@/hooks/use-auth';
 import { CalendarDays, Clock, Bell, ChevronDown } from 'lucide-react';
@@ -130,7 +130,14 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <div className="flex-1 flex flex-col">
         {/* ── Top Header Bar ── */}
         <header className="h-14 border-b border-gray-200 bg-white flex items-center justify-end px-6 gap-4 shrink-0 shadow-sm">
-          <DateTimeFilter />
+          <Suspense fallback={
+            <div className="flex items-center gap-4">
+              <span className="w-24 h-4 bg-gray-100 rounded animate-pulse" />
+              <span className="w-16 h-4 bg-gray-100 rounded animate-pulse" />
+            </div>
+          }>
+            <DateTimeFilter />
+          </Suspense>
 
           {/* Notification bell */}
           <div className="w-px h-5 bg-gray-200 mx-1" />
