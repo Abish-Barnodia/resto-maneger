@@ -121,15 +121,6 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
   try {
     await client.query('BEGIN');
 
-    // Ensure 'completed' is a valid enum value before updating
-    // (handles case where the Render DB migration hasn't added it yet)
-    try {
-      await client.query(`ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'completed'`);
-    } catch (enumErr: any) {
-      // Ignore if already exists or in transaction context — will handle below
-      console.warn('order_status_enum ALTER skipped (may already exist):', enumErr.message);
-    }
-
     const skotResult = await client.query(
       `UPDATE section_kots SET status = $1::kot_status WHERE section_kot_id = $2 RETURNING *`,
       [status, sectionKotId]
