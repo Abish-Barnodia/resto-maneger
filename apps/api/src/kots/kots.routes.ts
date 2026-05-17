@@ -118,8 +118,8 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
   }
 
   const client = await pool.connect();
+  let currentStep = 'begin';
   try {
-    let currentStep = 'begin';
     await client.query('BEGIN');
 
     currentStep = 'update_section_kot';
