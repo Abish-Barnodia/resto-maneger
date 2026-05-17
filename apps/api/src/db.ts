@@ -246,15 +246,14 @@ export async function initializeDatabase(): Promise<void> {
     );
   `);
 
-  await pool.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'order_status_enum') THEN
-        CREATE TYPE order_status_enum AS ENUM ('open', 'sent_to_kitchen', 'billed');
-      END IF;
-    END
-    $$;
-  `);
+  // NOTE: ALTER TYPE ADD VALUE cannot run inside a transaction block in PostgreSQL.
+  // It must be run as a standalone statement outside DO $$ ... $$.
+  try {
+    await pool.query(`ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'completed'`);
+    console.log('order_status_enum: completed value ensured');
+  } catch (e: any) {
+    console.warn('order_status_enum ALTER skipped:', e.message);
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orders (

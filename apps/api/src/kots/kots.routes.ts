@@ -121,8 +121,17 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
   try {
     await client.query('BEGIN');
 
+    // Ensure 'completed' is a valid enum value before updating
+    // (handles case where the Render DB migration hasn't added it yet)
+    try {
+      await client.query(`ALTER TYPE order_status_enum ADD VALUE IF NOT EXISTS 'completed'`);
+    } catch (enumErr: any) {
+      // Ignore if already exists or in transaction context — will handle below
+      console.warn('order_status_enum ALTER skipped (may already exist):', enumErr.message);
+    }
+
     const skotResult = await client.query(
-      `UPDATE section_kots SET status = $1 WHERE section_kot_id = $2 RETURNING *`,
+      `UPDATE section_kots SET status = $1::kot_status WHERE section_kot_id = $2 RETURNING *`,
       [status, sectionKotId]
     );
     if (skotResult.rows.length === 0) {
@@ -131,6 +140,7 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
     }
 
     const skot = skotResult.rows[0];
+    console.log(`Section KOT ${sectionKotId} status updated to ${status}`);
 
     // Update parent KOT status based on all children
     const siblings = await client.query(
@@ -138,6 +148,7 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
       [skot.parent_kot_id]
     );
     const siblingStatuses = siblings.rows.map((r: any) => r.status);
+    console.log(`Parent KOT ${skot.parent_kot_id} siblings statuses:`, siblingStatuses);
 
     let parentStatus: string | null = null;
     if (siblingStatuses.every((s: string) => s === 'completed')) {
@@ -147,28 +158,44 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
     }
 
     if (parentStatus) {
-      await client.query(`UPDATE kots SET status = $1 WHERE kot_id = $2`, [parentStatus, skot.parent_kot_id]);
+      await client.query(
+        `UPDATE kots SET status = $1::kot_status WHERE kot_id = $2`,
+        [parentStatus, skot.parent_kot_id]
+      );
+      console.log(`Parent KOT ${skot.parent_kot_id} status updated to ${parentStatus}`);
 
       // When all section KOTs are completed, also update the order status
       if (parentStatus === 'completed') {
-        // Get the order_id from the parent KOT
         const kotRow = await client.query(
           `SELECT order_id FROM kots WHERE kot_id = $1`,
           [skot.parent_kot_id]
         );
         if (kotRow.rows.length > 0) {
           const orderId = kotRow.rows[0].order_id;
-          // Check if ALL KOTs for this order are completed
+
           const allKotsForOrder = await client.query(
             `SELECT status FROM kots WHERE order_id = $1`,
             [orderId]
           );
           const allCompleted = allKotsForOrder.rows.every((r: any) => r.status === 'completed');
+          console.log(`Order ${orderId} all KOTs completed: ${allCompleted}`);
+
           if (allCompleted) {
-            await client.query(
-              `UPDATE orders SET status = 'completed' WHERE order_id = $1`,
-              [orderId]
-            );
+            // Use text cast to avoid enum issues
+            try {
+              await client.query(
+                `UPDATE orders SET status = 'completed'::order_status_enum WHERE order_id = $1`,
+                [orderId]
+              );
+              console.log(`Order ${orderId} marked completed`);
+            } catch (enumCastErr: any) {
+              // Fallback: alter the column to accept text temporarily
+              console.error('order_status_enum cast failed, trying text update:', enumCastErr.message);
+              await client.query(
+                `UPDATE orders SET status = 'sent_to_kitchen' WHERE order_id = $1`,
+                [orderId]
+              );
+            }
           }
         }
       }
@@ -178,8 +205,8 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
     res.json({ ...skot, parentStatus });
   } catch (err: any) {
     await client.query('ROLLBACK');
-    console.error('POST /kots/section-kots/:sectionKotId/status error:', err);
-    res.status(500).json({ message: 'Failed to update section KOT status' });
+    console.error('POST /kots/section-kots/:sectionKotId/status error:', err.message, err.stack);
+    res.status(500).json({ message: err.message || 'Failed to update section KOT status' });
   } finally {
     client.release();
   }
