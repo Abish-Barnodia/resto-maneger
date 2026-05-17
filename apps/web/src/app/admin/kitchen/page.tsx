@@ -97,7 +97,7 @@ function statusPill(status: string) {
 function statusLabel(status: string) {
   if (status === 'pending') return 'New';
   if (status === 'acknowledged') return 'In Progress';
-  if (status === 'completed') return 'Ready';
+  if (status === 'completed') return 'Completed';
   return status;
 }
 
@@ -236,6 +236,22 @@ function KOTPageInner() {
   }, [fetchSections]);
 
   useEffect(() => { if (sections.length > 0) fetchAllKots(sections, true); }, [sections, fetchAllKots]);
+
+  // Sync selectedKot with background polling updates
+  useEffect(() => {
+    if (selectedKot) {
+      const latestData = allKots.find(k => k.section_kot_id === selectedKot.section_kot_id);
+      if (latestData) {
+        // Only update if something actually changed to avoid unnecessary re-renders
+        if (latestData.status !== selectedKot.status || latestData.items.length !== selectedKot.items.length) {
+          setSelectedKot(latestData);
+        }
+      } else {
+        // If it was completed/removed by another terminal, close the panel
+        setSelectedKot(null);
+      }
+    }
+  }, [allKots]);
 
 
   const advanceStatus = async (nextStatus: string) => {
@@ -381,7 +397,7 @@ function KOTPageInner() {
           <StatCard label="Total KOT" value={counts.total} sub="All Sections" valueClass="text-gray-800" icon={<LayoutGrid className="text-blue-400" size={22} />} iconBg="bg-blue-50" />
           <StatCard label="New / Pending" value={counts.pending} sub="Need Attention" valueClass="text-orange-500" icon={<Clock className="text-orange-400" size={22} />} iconBg="bg-orange-50" subClass="text-orange-400" />
           <StatCard label="In Progress" value={counts.acknowledged} sub="Being Prepared" valueClass="text-blue-500" icon={<ChefHat className="text-blue-400" size={22} />} iconBg="bg-blue-50" subClass="text-blue-400" />
-          <StatCard label="Ready" value={counts.completed} sub="Ready to Serve" valueClass="text-green-500" icon={<CheckCheck className="text-green-400" size={22} />} iconBg="bg-green-50" subClass="text-green-400" />
+          <StatCard label="Completed" value={counts.completed} sub="Ready to Serve" valueClass="text-green-500" icon={<CheckCheck className="text-green-400" size={22} />} iconBg="bg-green-50" subClass="text-green-400" />
         </div>
 
         {/* ── Main Content ── */}
@@ -531,7 +547,7 @@ function KOTPageInner() {
                     disabled={updatingStatus}
                     className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white font-bold text-sm py-2.5 rounded-xl transition-colors disabled:opacity-50"
                   >
-                    <CheckCircle size={16} /> Mark Ready
+                    <CheckCircle size={16} /> Mark Completed
                   </button>
                 )}
                 {selectedKot.status === 'completed' && (

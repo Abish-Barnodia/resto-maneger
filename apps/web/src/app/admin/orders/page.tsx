@@ -88,9 +88,12 @@ export default function OrdersPage() {
         // Find all KOTs for this order
         const orderKots = allKots.filter((k: any) => k.order_id === o.order_id);
         
-        // If the order has KOTs and ALL of them are completed, force the order status to completed
-        if (orderKots.length > 0 && orderKots.every((k: any) => k.status === 'completed')) {
-          currentStatus = 'completed';
+        if (orderKots.length > 0) {
+          if (orderKots.every((k: any) => k.status === 'completed')) {
+            currentStatus = 'completed';
+          } else if (orderKots.some((k: any) => k.status === 'acknowledged')) {
+            currentStatus = 'in_progress';
+          }
         }
         
         return { 
@@ -135,8 +138,11 @@ export default function OrdersPage() {
   }
 
   const statusBadge = (s: string) => {
-    if (s === 'open' || s === 'sent_to_kitchen') return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Running</Badge>;
-    if (s === 'completed' || s === 'billed') return <Badge className="bg-blue-100 text-blue-700 border-blue-200">Completed</Badge>;
+    if (s === 'open') return <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">New</Badge>;
+    if (s === 'sent_to_kitchen') return <Badge className="bg-orange-100 text-orange-700 border-orange-200">Pending</Badge>;
+    if (s === 'in_progress') return <Badge className="bg-blue-100 text-blue-700 border-blue-200">In Progress</Badge>;
+    if (s === 'completed') return <Badge className="bg-green-100 text-green-700 border-green-200">Completed</Badge>;
+    if (s === 'billed') return <Badge className="bg-purple-100 text-purple-700 border-purple-200">Billed</Badge>;
     if (s === 'cancelled') return <Badge className="bg-red-100 text-red-700 border-red-200">Cancelled</Badge>;
     return <Badge variant="secondary">{s}</Badge>;
   };
@@ -145,12 +151,12 @@ export default function OrdersPage() {
 
   const filtered = useMemo(() => {
     let list = orders;
-    if (activeTab === 'running') list = list.filter(o => o.status === 'open' || o.status === 'sent_to_kitchen');
+    if (activeTab === 'running') list = list.filter(o => o.status === 'open' || o.status === 'sent_to_kitchen' || o.status === 'in_progress');
     else if (activeTab === 'completed') list = list.filter(o => o.status === 'completed' || o.status === 'billed');
     else if (activeTab === 'cancelled') list = list.filter(o => o.status === 'cancelled');
     if (applied.table !== 'all') list = list.filter(o => (o.table_number || o.table_id) === applied.table);
     if (applied.status !== 'all') {
-      if (applied.status === 'running') list = list.filter(o => o.status === 'open' || o.status === 'sent_to_kitchen');
+      if (applied.status === 'running') list = list.filter(o => o.status === 'open' || o.status === 'sent_to_kitchen' || o.status === 'in_progress');
       else if (applied.status === 'completed') list = list.filter(o => o.status === 'completed' || o.status === 'billed');
       else if (applied.status === 'cancelled') list = list.filter(o => o.status === 'cancelled');
     }
@@ -399,9 +405,12 @@ export default function OrdersPage() {
                   </div>
                   <div className="p-5 border-t bg-slate-50/50 flex gap-3">
                     <Button variant="outline" className="flex-1 text-primary border-primary/30 bg-primary/5 hover:bg-primary/10"
-                      disabled={isSending} onClick={() => sendToKitchen(selected)}>
+                      disabled={isSending || selected.status === 'in_progress'} onClick={() => sendToKitchen(selected)}>
                       <Printer className="w-4 h-4 mr-2" />
-                      {isSending ? 'Sending...' : selected.status === 'open' ? 'Send to Kitchen' : 'Print KOT'}
+                      {isSending ? 'Sending...' : 
+                       selected.status === 'open' ? 'Send to Kitchen' : 
+                       selected.status === 'in_progress' ? 'Kitchen is Preparing' :
+                       selected.status === 'completed' ? 'Order Completed' : 'Print KOT'}
                     </Button>
                     <Button className="flex-1 bg-primary hover:bg-primary/90 text-white"
                       disabled={selected.status === 'billed'} onClick={() => openBill(selected)}>
