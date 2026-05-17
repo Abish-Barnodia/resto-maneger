@@ -255,6 +255,13 @@ export async function initializeDatabase(): Promise<void> {
     console.warn('order_status_enum ALTER skipped:', e.message);
   }
 
+  try {
+    await pool.query(`ALTER TYPE kot_status ADD VALUE IF NOT EXISTS 'completed'`);
+    console.log('kot_status: completed value ensured');
+  } catch (e: any) {
+    console.warn('kot_status ALTER skipped:', e.message);
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orders (
       order_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
