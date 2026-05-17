@@ -133,6 +133,8 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
     const skot = skotResult.rows[0];
     console.log(`Section KOT ${sectionKotId} status updated to ${status}`);
 
+    let orderIdToComplete: string | null = null;
+
     // Update parent KOT status based on all children
     const siblings = await client.query(
       `SELECT status FROM section_kots WHERE parent_kot_id = $1`,
@@ -155,7 +157,8 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
       );
       console.log(`Parent KOT ${skot.parent_kot_id} status updated to ${parentStatus}`);
 
-      // When all section KOTs are completed, also update the order status
+      // When all section KOTs are completed, we want to update the order status
+      // We will do this AFTER committing the transaction to prevent enum cast errors from poisoning it
       if (parentStatus === 'completed') {
         const kotRow = await client.query(
           `SELECT order_id FROM kots WHERE kot_id = $1`,
@@ -163,30 +166,12 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
         );
         if (kotRow.rows.length > 0) {
           const orderId = kotRow.rows[0].order_id;
-
           const allKotsForOrder = await client.query(
             `SELECT status FROM kots WHERE order_id = $1`,
             [orderId]
           );
-          const allCompleted = allKotsForOrder.rows.every((r: any) => r.status === 'completed');
-          console.log(`Order ${orderId} all KOTs completed: ${allCompleted}`);
-
-          if (allCompleted) {
-            // Use text cast to avoid enum issues
-            try {
-              await client.query(
-                `UPDATE orders SET status = 'completed'::order_status_enum WHERE order_id = $1`,
-                [orderId]
-              );
-              console.log(`Order ${orderId} marked completed`);
-            } catch (enumCastErr: any) {
-              // Fallback: alter the column to accept text temporarily
-              console.error('order_status_enum cast failed, trying text update:', enumCastErr.message);
-              await client.query(
-                `UPDATE orders SET status = 'sent_to_kitchen' WHERE order_id = $1`,
-                [orderId]
-              );
-            }
+          if (allKotsForOrder.rows.every((r: any) => r.status === 'completed')) {
+            orderIdToComplete = orderId;
           }
         }
       }
@@ -194,6 +179,28 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
 
     await client.query('COMMIT');
     res.json({ ...skot, parentStatus });
+    
+    // Post-commit: try to update the order status. If enum is missing, we catch it safely.
+    if (orderIdToComplete) {
+      try {
+        await pool.query(
+          `UPDATE orders SET status = 'completed'::order_status_enum WHERE order_id = $1`,
+          [orderIdToComplete]
+        );
+        console.log(`Order ${orderIdToComplete} marked completed`);
+      } catch (enumCastErr: any) {
+        console.error('order_status_enum cast failed, trying text update fallback:', enumCastErr.message);
+        // Fallback using text update in case enum failed
+        try {
+          await pool.query(
+            `UPDATE orders SET status = 'sent_to_kitchen' WHERE order_id = $1`,
+            [orderIdToComplete]
+          );
+        } catch (fbErr: any) {
+          console.error('Order status fallback also failed:', fbErr.message);
+        }
+      }
+    }
   } catch (err: any) {
     await client.query('ROLLBACK');
     console.error('POST /kots/section-kots/:sectionKotId/status error:', err.message, err.stack);
