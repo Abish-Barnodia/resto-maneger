@@ -237,6 +237,22 @@ function KOTPageInner() {
 
   useEffect(() => { if (sections.length > 0) fetchAllKots(sections, true); }, [sections, fetchAllKots]);
 
+  // Sync selectedKot with background polling updates
+  useEffect(() => {
+    if (selectedKot) {
+      const latestData = allKots.find(k => k.section_kot_id === selectedKot.section_kot_id);
+      if (latestData) {
+        // Only update if something actually changed to avoid unnecessary re-renders
+        if (latestData.status !== selectedKot.status || latestData.items.length !== selectedKot.items.length) {
+          setSelectedKot(latestData);
+        }
+      } else {
+        // If it was completed/removed by another terminal, close the panel
+        setSelectedKot(null);
+      }
+    }
+  }, [allKots]);
+
 
   const advanceStatus = async (nextStatus: string) => {
     if (!selectedKot) return;
