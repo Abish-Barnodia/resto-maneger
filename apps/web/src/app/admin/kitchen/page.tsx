@@ -53,10 +53,11 @@ interface SectionKOT {
   section_id: string;
   section_name: string;
   section_kot_number: string;
-  status: 'pending' | 'acknowledged' | 'completed';
+  status: 'pending' | 'acknowledged' | 'completed' | 'served';
   generated_at: string;
   table_number: string;
   kot_number: string;
+  order_id: string;
   order_phase: number;
   items: KOTItem[];
 }
@@ -90,14 +91,16 @@ function SectionIcon({ name, size = 16, className = '' }: { name: string; size?:
 function statusPill(status: string) {
   if (status === 'pending') return 'bg-emerald-100 text-emerald-700 border-emerald-200';
   if (status === 'acknowledged') return 'bg-blue-100 text-blue-700 border-blue-200';
-  if (status === 'completed') return 'bg-gray-100 text-gray-500 border-gray-200';
+  if (status === 'completed') return 'bg-orange-100 text-orange-700 border-orange-200';
+  if (status === 'served') return 'bg-gray-100 text-gray-500 border-gray-200';
   return 'bg-gray-100 text-gray-500';
 }
 
 function statusLabel(status: string) {
   if (status === 'pending') return 'New';
   if (status === 'acknowledged') return 'In Progress';
-  if (status === 'completed') return 'Completed';
+  if (status === 'completed') return 'Ready';
+  if (status === 'served') return 'Served';
   return status;
 }
 
@@ -134,7 +137,10 @@ function KotCard({ kot, selected, onClick }: { kot: SectionKOT; selected: boolea
       )}
     >
       <div className="flex items-center justify-between px-3 pt-2 pb-1 border-b border-gray-50 bg-gray-50/30 rounded-t-xl">
-        <span className={cn('text-[10px] font-bold tracking-tight', pal.text)}>{kot.section_kot_number}</span>
+        <div className="flex flex-col">
+          <span className={cn('text-[10px] font-bold tracking-tight', pal.text)}>{kot.section_kot_number}</span>
+          <span className="text-[8px] text-gray-400 font-mono">ID: {kot.order_id?.slice(0, 8) || 'N/A'}</span>
+        </div>
         <span className="text-[10px] text-gray-400 font-mono">{fmtTime(kot.generated_at)}</span>
       </div>
       <div className="px-3 py-2 flex-1 flex flex-col justify-between">
@@ -271,8 +277,8 @@ function KOTPageInner() {
       
       const updated = { ...selectedKot, status: nextStatus as any };
 
-      // If completed, close the detail panel and remove from lists immediately
-      if (nextStatus === 'completed') {
+      // If served, close the detail panel and remove from lists immediately
+      if (nextStatus === 'served') {
         setSelectedKot(null);
         setKotsBySection(prev => {
           const copy = { ...prev };
@@ -310,9 +316,9 @@ function KOTPageInner() {
   const [localSearch, setLocalSearch] = useState('');
   const [showStatusFilter, setShowStatusFilter] = useState<'all' | 'pending' | 'acknowledged'>('all');
 
-  // Apply date/time filters AND hide completed KOTs (they auto-remove when marked Ready)
+  // Apply date/time filters AND hide served KOTs (they auto-remove when marked Served)
   const filteredAllKots = allKots.filter(kot => {
-    if (kot.status === 'completed') return false; // auto-remove completed
+    if (kot.status === 'served') return false; // auto-remove served
     
     // Status Filter
     if (showStatusFilter !== 'all' && kot.status !== showStatusFilter) return false;
@@ -336,7 +342,7 @@ function KOTPageInner() {
   const filteredKotsBySection: Record<string, SectionKOT[]> = {};
   for (const [key, kots] of Object.entries(kotsBySection)) {
     filteredKotsBySection[key] = kots.filter(kot => {
-      if (kot.status === 'completed') return false; // auto-remove completed
+      if (kot.status === 'served') return false; // auto-remove served
       
       // Status Filter
       if (showStatusFilter !== 'all' && kot.status !== showStatusFilter) return false;
@@ -358,12 +364,13 @@ function KOTPageInner() {
     });
   }
 
-  // Counts include completed KOTs so the "Ready" stat card still shows correctly
+  // Counts include served KOTs so the "Served" stat card still shows correctly
   const counts = {
     total: allKots.length,
     pending: allKots.filter(k => k.status === 'pending').length,
     acknowledged: allKots.filter(k => k.status === 'acknowledged').length,
     completed: allKots.filter(k => k.status === 'completed').length,
+    served: allKots.filter(k => k.status === 'served').length,
   };
 
   return (
@@ -483,8 +490,8 @@ function KOTPageInner() {
         <div className="grid grid-cols-4 gap-4 mb-6">
           <StatCard label="Total KOT" value={counts.total} sub="All Sections" valueClass="text-gray-800" icon={<LayoutGrid className="text-blue-400" size={22} />} iconBg="bg-blue-50" />
           <StatCard label="New / Pending" value={counts.pending} sub="Need Attention" valueClass="text-orange-500" icon={<Clock className="text-orange-400" size={22} />} iconBg="bg-orange-50" subClass="text-orange-400" />
-          <StatCard label="In Progress" value={counts.acknowledged} sub="Being Prepared" valueClass="text-blue-500" icon={<ChefHat className="text-blue-400" size={22} />} iconBg="bg-blue-50" subClass="text-blue-400" />
-          <StatCard label="Completed" value={counts.completed} sub="Ready to Serve" valueClass="text-green-500" icon={<CheckCheck className="text-green-400" size={22} />} iconBg="bg-green-50" subClass="text-green-400" />
+          <StatCard label="Ready" value={counts.completed} sub="To be Served" valueClass="text-blue-500" icon={<ChefHat className="text-blue-400" size={22} />} iconBg="bg-blue-50" subClass="text-blue-400" />
+          <StatCard label="Served" value={counts.served} sub="Done" valueClass="text-green-500" icon={<CheckCheck className="text-green-400" size={22} />} iconBg="bg-green-50" subClass="text-green-400" />
         </div>
 
         {/* ── Main Content ── */}
@@ -528,16 +535,45 @@ function KOTPageInner() {
                           </span>
                         </div>
                       </div>
+
+                      <div className="relative group/menu">
+                        <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-400 hover:text-gray-600">
+                          <MoreVertical size={18} />
+                        </button>
+                        <div className="absolute right-0 top-full mt-1 w-48 bg-white border border-gray-200 rounded-xl shadow-xl opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-50 p-1">
+                          <button 
+                            onClick={async () => {
+                              if (confirm(`Are you sure you want to mark all KOTs in ${section.section_name} as ready?`)) {
+                                for (const kot of sectionKots) {
+                                  if (kot.status !== 'completed') {
+                                    await apiClient.post(`/kots/section-kots/${kot.section_kot_id}/status`, { status: 'completed' });
+                                  }
+                                }
+                                refresh();
+                              }
+                            }}
+                            className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-emerald-50 text-emerald-600 font-medium flex items-center gap-2"
+                          >
+                            <CheckCheck size={14} /> Mark All Ready
+                          </button>
+                          <button 
+                            onClick={() => setActiveTab(section.section_id)}
+                            className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50 text-gray-600 font-medium flex items-center gap-2"
+                          >
+                            <Filter size={14} /> Focus Section
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Cards Horizontal Grid */}
-                    <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-2 px-2">
+                    {/* Cards Grid */}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-5 gap-4 pb-4 px-2">
                       {sectionKots.length === 0 ? (
-                        <div className="w-full flex items-center justify-center py-8 border-2 border-dashed border-gray-100 rounded-2xl text-gray-400 text-sm">
+                        <div className="col-span-full flex items-center justify-center py-8 border-2 border-dashed border-gray-100 rounded-2xl text-gray-400 text-sm">
                           No active orders for this section
                         </div>
                       ) : sectionKots.map(kot => (
-                        <div key={kot.section_kot_id} className="min-w-[180px] w-[180px]">
+                        <div key={kot.section_kot_id} className="w-full">
                           <KotCard
                             kot={kot}
                             selected={selectedKot?.section_kot_id === kot.section_kot_id}
@@ -561,7 +597,7 @@ function KOTPageInner() {
                   <div>
                     <h2 className="font-bold text-gray-900">Order Detail</h2>
                     <p className="text-[10px] text-gray-400 font-mono uppercase tracking-tighter">
-                      KOT-#{selectedKot.section_kot_number}
+                      KOT: {kot.section_kot_number} | ORD: {selectedKot.order_id?.slice(0, 8)}
                     </p>
                   </div>
                   <button onClick={() => setSelectedKot(null)} className="p-2 hover:bg-white rounded-full border border-transparent hover:border-gray-200 transition-all text-gray-400 hover:text-gray-600">
@@ -641,6 +677,16 @@ function KOTPageInner() {
                       MARK READY
                     </Button>
                   )}
+                  {selectedKot.status === 'completed' && (
+                    <Button
+                      onClick={() => advanceStatus('served')}
+                      disabled={updatingStatus}
+                      className="w-full h-14 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-base gap-2 shadow-lg shadow-blue-200"
+                    >
+                      {updatingStatus ? <RefreshCw className="animate-spin" /> : <CheckCheck size={22} />}
+                      MARK SERVED
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     className="w-full h-12 rounded-xl border-gray-200 text-gray-600 font-bold gap-2 hover:bg-gray-50"
@@ -663,6 +709,7 @@ function KOTPageInner() {
                             <p className="text-[10px] text-gray-500">Kitchen Copy</p>
                     </div>
                     <div className="grid grid-cols-2 gap-y-1">
+                            <span>ORDER ID:</span><span className="text-right font-bold">{selectedKot.order_id?.slice(0, 8)}</span>
                             <span>KOT NO:</span><span className="text-right font-bold">#{selectedKot.section_kot_number}</span>
                             <span>TABLE:</span><span className="text-right font-bold">{selectedKot.table_number}</span>
                             <span>TIME:</span><span className="text-right">{fmtFull(selectedKot.generated_at)}</span>

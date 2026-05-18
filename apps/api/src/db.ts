@@ -262,6 +262,20 @@ export async function initializeDatabase(): Promise<void> {
     console.warn('kot_status ALTER skipped:', e.message);
   }
 
+  try {
+    await pool.query(`ALTER TYPE kot_status ADD VALUE IF NOT EXISTS 'ready'`);
+    console.log('kot_status: ready value ensured');
+  } catch (e: any) {
+    console.warn('kot_status ready ALTER skipped:', e.message);
+  }
+
+  try {
+    await pool.query(`ALTER TYPE kot_status ADD VALUE IF NOT EXISTS 'served'`);
+    console.log('kot_status: served value ensured');
+  } catch (e: any) {
+    console.warn('kot_status served ALTER skipped:', e.message);
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS orders (
       order_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -294,7 +308,7 @@ export async function initializeDatabase(): Promise<void> {
     DO $$ 
     BEGIN
       IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'kot_status') THEN
-        CREATE TYPE kot_status AS ENUM ('pending', 'acknowledged', 'completed');
+        CREATE TYPE kot_status AS ENUM ('pending', 'acknowledged', 'completed', 'ready', 'served');
       END IF;
     END $$;
 

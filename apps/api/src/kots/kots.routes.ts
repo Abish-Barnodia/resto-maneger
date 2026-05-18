@@ -81,7 +81,7 @@ kotsRouter.get('/section/:sectionId', async (req, res) => {
     const skotsResult = await pool.query(
       `SELECT sk.section_kot_id, sk.parent_kot_id, sk.section_id, sk.section_name,
               sk.section_kot_number, sk.status, sk.generated_at,
-              k.table_number, k.kot_number, k.order_phase
+              k.table_number, k.kot_number, k.order_phase, k.order_id
        FROM section_kots sk
        LEFT JOIN kots k ON k.kot_id = sk.parent_kot_id
        WHERE sk.section_name = $1
@@ -112,7 +112,7 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
   const { sectionKotId } = req.params;
   const { status } = req.body;
 
-  const validStatuses = ['pending', 'acknowledged', 'completed'];
+  const validStatuses = ['pending', 'acknowledged', 'completed', 'served'];
   if (!status || !validStatuses.includes(status)) {
     return res.status(400).json({ message: `status must be one of: ${validStatuses.join(', ')}` });
   }
@@ -147,9 +147,11 @@ kotsRouter.post('/section-kots/:sectionKotId/status', async (req, res) => {
     console.log(`Parent KOT ${skot.parent_kot_id} siblings statuses:`, siblingStatuses);
 
     let parentStatus: string | null = null;
-    if (siblingStatuses.every((s: string) => s === 'completed')) {
-      parentStatus = 'completed';
-    } else if (siblingStatuses.every((s: string) => s === 'acknowledged' || s === 'completed')) {
+    if (siblingStatuses.every((s: string) => s === 'served')) {
+      parentStatus = 'completed'; // Parent KOT is completely done when all sections are served
+    } else if (siblingStatuses.every((s: string) => s === 'completed' || s === 'served')) {
+      parentStatus = 'ready'; // Parent KOT is ready when all sections are completed
+    } else if (siblingStatuses.every((s: string) => s === 'acknowledged' || s === 'completed' || s === 'served')) {
       parentStatus = 'acknowledged';
     }
 
