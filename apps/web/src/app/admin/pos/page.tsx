@@ -21,7 +21,8 @@ import {
   Upload,
   X,
   ImageIcon,
-  UtensilsCrossed
+  UtensilsCrossed,
+  FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -182,11 +183,8 @@ export default function POSTerminal() {
   const printRef = useRef<HTMLDivElement>(null);
 
   const workflowTabs = [
-    { id: 'categories', label: 'POS - Categories & Items' },
-    { id: 'summary', label: 'POS - Billing Summary' },
-    { id: 'gst', label: 'POS - Discount & GST View' },
-    { id: 'payment', label: 'POS - Payment' },
-    { id: 'receipt', label: 'POS - Bill Receipt' },
+    { id: 'categories', label: 'POS Terminal' },
+    { id: 'catalog', label: 'Item Catalog' },
   ];
 
   const handleNewBill = () => {
@@ -966,142 +964,18 @@ export default function POSTerminal() {
         );
 
       case 'summary':
-        return (
-          <div className="flex flex-col gap-4 h-full">
-            {/* Selected Items with Bill Layout */}
-            <Card className="border shadow-sm flex-1">
-              <CardHeader className="pb-3">
-                <div className="flex justify-between items-center">
-                  <CardTitle className="text-lg">Current Bill</CardTitle>
-                  <Button variant="outline" size="sm" onClick={() => setActiveWorkflow('categories')} className="gap-2">
-                    <Plus size={14} /> Add Item
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Table Header */}
-                <div className="grid grid-cols-12 text-sm font-medium text-gray-600 pb-2 border-b">
-                  <div className="col-span-6">Item</div>
-                  <div className="col-span-2 text-center">Qty</div>
-                  <div className="col-span-2 text-right">Rate</div>
-                  <div className="col-span-2 text-right">Amount</div>
-                </div>
-                
-                {/* Items List */}
-                <div className="space-y-2">
-                  {cart.map(item => {
-                    const itemGstRate = item.gstRate || gstRates[item.categoryId] || 0;
-                    const itemSubtotal = item.price * item.quantity;
-                    return (
-                      <div key={item.id} className="grid grid-cols-12 items-center py-2 border-b">
-                        <div className="col-span-6">
-                          <h4 className="font-medium text-sm">{item.name}</h4>
-                          <p className="text-xs text-gray-500">GST: {itemGstRate}%</p>
-                        </div>
-                        <div className="col-span-2 text-center text-sm">{item.quantity}</div>
-                        <div className="col-span-2 text-right text-sm">Rs {item.price}</div>
-                        <div className="col-span-2 text-right flex items-center justify-between">
-                          <span className="font-semibold text-sm">Rs {itemSubtotal.toFixed(2)}</span>
-                          <button onClick={() => removeFromCart(item.id)} className="text-red-500 hover:text-red-700 ml-2">
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* GST Breakdown */}
-                {Object.keys(totals.gstBreakdown).length > 0 && (
-                  <div className="mt-4 pt-4 border-t">
-                    <h4 className="font-medium text-sm mb-2">GST Breakdown</h4>
-                    <div className="space-y-1">
-                      {Object.entries(totals.gstBreakdown).map(([rate, amount]) => (
-                        <div key={rate} className="flex justify-between text-sm text-gray-600">
-                          <span>GST @ {rate}%</span>
-                          <span>Rs {amount.toFixed(2)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        );
-
       case 'gst':
+      case 'payment':
         return (
-          <div className="flex flex-col gap-4 h-full">
-            {/* GST Rates Display */}
-            <Card className="border shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">GST Rates (Read-Only)</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {categories.map(cat => (
-                    <div key={cat.id} className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">{cat.name}</label>
-                      <div className="flex items-center gap-2">
-                        <Input 
-                          type="number" 
-                          value={gstRates[cat.id] || cat.defaultGst}
-                          disabled
-                          className="h-9 text-sm bg-gray-100"
-                          min="0"
-                          max="100"
-                          step="0.5"
-                        />
-                        <span className="text-sm font-medium">%</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-500 mt-2">
-                  GST rates are configured in Settings → GST Configuration
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Discount Settings */}
-            <Card className="border shadow-sm">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg">Discount Settings</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Discount Type</label>
-                    <select 
-                      className="w-full h-10 px-3 rounded-lg border bg-white"
-                      value={discountType}
-                      onChange={(e) => setDiscountType(e.target.value)}
-                    >
-                      <option>Percentage (%)</option>
-                      <option>Fixed Amount (Rs)</option>
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium">Value</label>
-                    <Input 
-                      type="number" 
-                      value={discountValue} 
-                      onChange={(e) => setDiscountValue(Number(e.target.value))}
-                      className="h-10"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">GSTIN</label>
-                  <Input 
-                    value={gstin} 
-                    onChange={(e) => setGstin(e.target.value)}
-                    className="h-10"
-                  />
-                </div>
-              </CardContent>
-            </Card>
+          <div className="flex flex-col items-center justify-center h-full bg-gray-50 rounded-lg p-8">
+            <div className="text-center space-y-4">
+              <div className="bg-amber-100 p-3 rounded-full w-16 h-16 flex items-center justify-center mx-auto text-amber-600">
+                <FileText size={32} />
+              </div>
+              <h2 className="text-xl font-bold">Consolidated Dashboard</h2>
+              <p className="text-gray-600 max-w-sm">This tab has been integrated into the sidebar for a faster workflow. Please use the POS Terminal tab.</p>
+              <Button onClick={() => setActiveWorkflow('categories')}>Go back to POS Terminal</Button>
+            </div>
           </div>
         );
 
@@ -1378,20 +1252,13 @@ export default function POSTerminal() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 pt-2">
+              <div className="grid grid-cols-1 pt-2">
                 <Button 
                   variant="outline" 
-                  className="w-full justify-center gap-2 h-8 text-[10px]"
-                  onClick={() => setShowWipDialog(true)}
+                  className="w-full justify-center gap-2 h-9 text-xs font-semibold border-blue-200 text-blue-600 hover:bg-blue-50"
+                  onClick={() => setIsPreviewOpen(true)}
                 >
-                  <CheckCircle2 size={12} /> View Details
-                </Button>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-center gap-2 h-8 text-[10px]"
-                  onClick={() => setShowWipDialog(true)}
-                >
-                  <Percent size={12} /> GST Rates
+                  <FileText size={14} /> View Detailed Summary
                 </Button>
               </div>
             </div>
@@ -1407,11 +1274,11 @@ export default function POSTerminal() {
               {isPlacingOrder ? 'Placing Order...' : 'Place Order'}
             </Button>
             <Button 
-              onClick={() => setIsPreviewOpen(true)}
+              onClick={generateBillAndPrint}
               disabled={(cart.length === 0 && existingOrders.length === 0) || isGeneratingBill || !selectedTable}
               className="w-full h-12 bg-green-500 hover:bg-green-600 text-white font-semibold"
             >
-              {isGeneratingBill ? 'Generating...' : 'Bill'}
+              {isGeneratingBill ? 'Generating...' : 'Generate Bill & Print'}
             </Button>
           </div>
         </div>
