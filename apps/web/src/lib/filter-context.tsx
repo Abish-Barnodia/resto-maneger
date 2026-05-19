@@ -21,9 +21,16 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   const [filterTime, setFilterTime] = useState('');
 
   useEffect(() => {
+    // Only set default if not already set (e.g. from a previous mount if we move this up, 
+    // but here it's about preventing it from resetting on every render if the parent re-renders)
+    // Actually, the issue is likely that it's called on every mount of FilterProvider.
+    // DashboardLayout has FilterProvider inside it.
     const now = new Date();
-    setFilterDate(now.toISOString().split('T')[0]);
-    setFilterTime(now.toTimeString().slice(0, 5));
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().slice(0, 5);
+    
+    setFilterDate(prev => prev || dateStr);
+    setFilterTime(prev => prev || timeStr);
   }, []);
 
   return (
